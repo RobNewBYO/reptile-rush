@@ -8,13 +8,13 @@ export interface ControlState {
   action: boolean;
 }
 
-const W = 960;
-const H = 540;
-
 /** Keyboard + on-screen touch buttons feeding one ControlState. */
 export class Controls {
   readonly state: ControlState = { left: false, right: false, jump: false, action: false };
   private keys: Record<string, Phaser.Input.Keyboard.Key> = {};
+  /** Set by the level; dims the on-screen action button while the attack is cooling down. */
+  actionReady = true;
+  private actionPad: Phaser.GameObjects.GameObject[] = [];
   private touch: ControlState = { left: false, right: false, jump: false, action: false };
 
   constructor(scene: Phaser.Scene) {
@@ -29,6 +29,8 @@ export class Controls {
 
   private buildTouch(scene: Phaser.Scene) {
     scene.input.addPointer(3); // multi-touch: move + jump together
+    const W = scene.scale.width;
+    const H = scene.scale.height;
     const pad = (x: number, y: number, r: number, label: string, key: keyof ControlState) => {
       const c = scene.add
         .circle(x, y, r, 0xffffff, 0.28)
@@ -36,11 +38,12 @@ export class Controls {
         .setScrollFactor(0)
         .setDepth(100)
         .setInteractive();
-      scene.add
+      const label2 = scene.add
         .text(x, y, label, { fontSize: `${r}px` })
         .setOrigin(0.5)
         .setScrollFactor(0)
         .setDepth(101);
+      if (key === 'action') this.actionPad = [c, label2];
       const set = (v: boolean) => {
         this.touch[key] = v;
         c.setFillStyle(0xffffff, v ? 0.5 : 0.28);
@@ -56,6 +59,7 @@ export class Controls {
   }
 
   update() {
+    for (const o of this.actionPad) (o as Phaser.GameObjects.Components.Alpha & Phaser.GameObjects.GameObject).setAlpha?.(this.actionReady ? 1 : 0.35);
     const k = this.keys;
     const down = (...ks: string[]) => ks.some((n) => k[n]?.isDown);
     this.state.left = this.touch.left || down('LEFT', 'A');

@@ -8,6 +8,8 @@ export interface EnemyConfig {
   boss?: boolean;
   /** Can't be stomped; must be bitten/bonked. */
   spiky?: boolean;
+  /** Boss only: how long it stays dizzy (and hittable) after a charge. Shrinks on later bosses. */
+  dizzyMs?: number;
   /** Emoji shown in the HUD for bosses (no reading needed). */
   icon?: string;
 }
@@ -23,6 +25,7 @@ export const ENEMIES: Record<string, EnemyConfig> = {
     chargeSpeed: 340,
     boss: true,
     icon: '🦡',
+    dizzyMs: 2400,
   },
   fox: {
     id: 'fox',
@@ -32,6 +35,7 @@ export const ENEMIES: Record<string, EnemyConfig> = {
     chargeSpeed: 420,
     boss: true,
     icon: '🦊',
+    dizzyMs: 2000,
   },
   wolf: {
     id: 'wolf',
@@ -41,6 +45,7 @@ export const ENEMIES: Record<string, EnemyConfig> = {
     chargeSpeed: 460,
     boss: true,
     icon: '🐺',
+    dizzyMs: 1700,
   },
   bear: {
     id: 'bear',
@@ -50,5 +55,6 @@ export const ENEMIES: Record<string, EnemyConfig> = {
     chargeSpeed: 400,
     boss: true,
     icon: '🐻',
+    dizzyMs: 1500,
   },
 };

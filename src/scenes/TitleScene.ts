@@ -12,7 +12,7 @@ export class TitleScene extends Phaser.Scene {
 
     this.add
       .text(width / 2, 130, 'REPTILE RUSH', {
-        fontSize: '84px',
+        fontSize: `${Math.min(84, Math.floor(width / 10))}px`,
         fontStyle: 'bold',
         color: '#fff8e1',
         stroke: '#1d3b2a',

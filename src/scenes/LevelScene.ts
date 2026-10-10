@@ -24,8 +24,10 @@ export class LevelScene extends Phaser.Scene {
   private invulnUntil = 0;
   private bonkUntil = 0;
   private bonkReadyAt = 0;
-  private checkpointX = 100;
+  private clinkReadyAt = 0;
   private finished = false;
+  /** Hearts hit zero; waiting out the 💔 beat before restarting the level or boss fight. */
+  private dying = false;
 
   private bossBarBg!: Phaser.GameObjects.Rectangle;
   private bossBar!: Phaser.GameObjects.Rectangle;
@@ -35,13 +37,15 @@ export class LevelScene extends Phaser.Scene {
     super('Level');
   }
 
-  init(data: { levelId: string; formId: string }) {
+  init(data: { levelId: string; formId: string; hurt?: number }) {
     this.level = this.cache.json.get(data.levelId) as LevelConfig;
     this.form = getForm(data.formId, Save.species);
     this.hearts = MAX_HEARTS;
-    this.hurtCount = 0;
-    this.checkpointX = 100;
+    // Hurts carry across level restarts, so a restart shows up in the final stars.
+    this.hurtCount = data.hurt ?? 0;
     this.finished = false;
+    this.dying = false;
+    this.clinkReadyAt = 0;
     this.invulnUntil = this.bonkUntil = this.bonkReadyAt = 0;
     this.heartIcons = [];
   }
@@ -58,7 +62,8 @@ export class LevelScene extends Phaser.Scene {
       plat.setDisplaySize(p.w, 24).refreshBody();
     }
 
-    this.player = this.physics.add.sprite(100, height - 140, this.form.texture);
+    // Spawn in the gap between the left and right touch buttons, not underneath one.
+    this.player = this.physics.add.sprite(360, height - 140, this.form.texture);
     this.player.setCollideWorldBounds(true).setDragX(900);
     this.player.setScale(this.form.scale);
     const tex = this.player.frame;
@@ -87,11 +92,11 @@ export class LevelScene extends Phaser.Scene {
 
     // Home button (top-right) back to level select.
     const home = this.add
-      .circle(this.scale.width - 40, 40, 26, 0x000000, 0.35)
+      .circle(this.scale.width - 48, 48, 36, 0x000000, 0.4)
       .setScrollFactor(0)
       .setDepth(100)
       .setInteractive();
-    this.add.text(this.scale.width - 40, 40, '⌂', { fontSize: '34px' }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
+    this.add.text(this.scale.width - 48, 48, '⌂', { fontSize: '44px' }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
     home.on('pointerdown', () => this.scene.start('LevelSelect'));
   }
 
@@ -122,7 +127,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private onContact(enemy: Enemy) {
-    if (enemy.defeated || this.finished) return;
+    if (enemy.defeated || this.finished || this.dying) return;
     const pBody = this.player.body as Phaser.Physics.Arcade.Body;
     const eBody = enemy.body as Phaser.Physics.Arcade.Body;
     const now = this.time.now;
@@ -131,14 +136,46 @@ export class LevelScene extends Phaser.Scene {
     const bonking = now < this.bonkUntil;
 
     if (stomp || bonking) {
-      if (enemy.hit(now) && stomp) this.player.setVelocityY(-380);
+      // A boss that isn't dizzy shrugs hits off: bounce away, no damage either way.
+      if (enemy.cfg.boss && !enemy.vulnerable) {
+        this.clink(enemy, now, stomp, bonking);
+        return;
+      }
+      if (enemy.hit(now)) {
+        if (stomp) this.player.setVelocityY(-380);
+        if (bonking) this.onBonkLanded(now);
+      }
       return;
     }
     if (enemy.harmless || now < this.invulnUntil) return;
     this.hurt(enemy.x);
   }
 
+  /** A landed bonk ends the dash (no ploughing through a crowd) and refunds the cooldown. */
+  private onBonkLanded(now: number) {
+    this.bonkUntil = now;
+    this.player.setVelocityX(0);
+    this.bonkReadyAt = now + this.form.attack.cooldown;
+    // Grace for other mammals overlapping this same frame, so ending the dash isn't unfair.
+    this.invulnUntil = Math.max(this.invulnUntil, now + 300);
+  }
+
+  private clink(enemy: Enemy, now: number, stomp: boolean, bonking: boolean) {
+    if (now < this.clinkReadyAt) return;
+    this.clinkReadyAt = now + 250;
+    if (stomp) this.player.setVelocityY(-380);
+    if (bonking) {
+      this.bonkUntil = now;
+      this.bonkReadyAt = now + this.form.attack.missCooldown;
+      this.player.setVelocity(-this.facing * 280, -220);
+      this.invulnUntil = Math.max(this.invulnUntil, now + 400);
+    }
+    const fx = this.add.text(enemy.x, enemy.y - enemy.displayHeight / 2, '🛡️', { fontSize: '44px' }).setOrigin(0.5).setDepth(60);
+    this.tweens.add({ targets: fx, y: fx.y - 40, alpha: 0, duration: 450, onComplete: () => fx.destroy() });
+  }
+
   private hurt(fromX: number) {
+    if (this.dying) return;
     const now = this.time.now;
     this.hearts -= 1;
     this.hurtCount += 1;
@@ -147,15 +184,50 @@ export class LevelScene extends Phaser.Scene {
     this.player.setVelocity(this.player.x < fromX ? -320 : 320, -300);
     this.refreshHearts();
 
-    if (this.hearts <= 0) {
-      // No hard game-over: back to the last checkpoint with full hearts.
-      this.time.delayedCall(350, () => {
-        this.hearts = MAX_HEARTS;
-        (this.player.body as Phaser.Physics.Arcade.Body).reset(this.checkpointX, this.level.height - 140);
-        this.invulnUntil = this.time.now + 2000;
-        this.refreshHearts();
-      });
-    }
+    if (this.hearts <= 0) this.lose();
+  }
+
+  /**
+   * Out of hearts. Fighting the boss -> restart the fight (boss back to full health, asleep);
+   * anywhere else -> restart the whole level.
+   */
+  private lose() {
+    this.dying = true;
+    const bossFight = this.boss.awake && !this.boss.defeated;
+    const { width, height } = this.scale;
+
+    const icon = this.add
+      .text(width / 2, height / 2, '💔', { fontSize: '140px' })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(200)
+      .setScale(0);
+    this.tweens.add({ targets: icon, scale: 1, duration: 300, ease: 'Back.Out' });
+
+    this.time.delayedCall(1000, () => this.cameras.main.fadeOut(300));
+    this.time.delayedCall(1350, () => {
+      if (!bossFight) {
+        this.scene.restart({ levelId: this.level.id, formId: this.form.id, hurt: this.hurtCount });
+        return;
+      }
+      icon.destroy();
+      this.boss.resetFight();
+      this.bossBarBg.setVisible(false);
+      this.bossBar.setVisible(false);
+      this.bossIcon.setVisible(false);
+      this.hearts = MAX_HEARTS;
+      this.refreshHearts();
+      // Just outside the arena, so the player walks in and wakes the boss on their own terms.
+      (this.player.body as Phaser.Physics.Arcade.Body).reset(
+        this.level.boss.wakeX - 60,
+        this.level.height - 140,
+      );
+      this.facing = 1;
+      this.invulnUntil = this.time.now + 1500;
+      this.bonkUntil = this.bonkReadyAt = 0;
+      this.dying = false;
+      this.cameras.main.fadeIn(300);
+    });
   }
 
   private showAttackFx() {
@@ -198,7 +270,7 @@ export class LevelScene extends Phaser.Scene {
     const c = this.controls.state;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
 
-    if (!this.finished) {
+    if (!this.finished && !this.dying) {
       if (c.left) {
         this.player.setVelocityX(-this.form.speed);
         this.facing = -1;
@@ -211,7 +283,8 @@ export class LevelScene extends Phaser.Scene {
       // Bonk: a short dash that defeats mammals it touches.
       if (c.action && time >= this.bonkReadyAt) {
         this.bonkUntil = time + this.form.attack.duration;
-        this.bonkReadyAt = time + this.form.attack.cooldown;
+        // Assume a whiff; onBonkLanded() shortens this if it connects.
+        this.bonkReadyAt = time + this.form.attack.duration + this.form.attack.missCooldown;
         this.showAttackFx();
       }
       if (time < this.bonkUntil) {
@@ -229,8 +302,7 @@ export class LevelScene extends Phaser.Scene {
 
     if (this.form.rolls) this.player.angle += body.velocity.x * 0.02;
 
-    // Checkpoints every 1000px.
-    this.checkpointX = Math.max(this.checkpointX, Math.floor(this.player.x / 1000) * 1000 + 100);
+    this.controls.actionReady = time >= this.bonkReadyAt;
 
     // Boss wakes when the player gets close.
     if (!this.boss.awake && this.player.x > this.level.boss.wakeX) {

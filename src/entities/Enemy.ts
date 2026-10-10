@@ -16,6 +16,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private mode: BossState = 'walk';
   private stateUntil = 0;
   private invulnUntil = 0;
+  private dizzyFx?: Phaser.GameObjects.Text;
 
   constructor(scene: Phaser.Scene, x: number, y: number, cfg: EnemyConfig, patrol = 150) {
     super(scene, x, y, cfg.texture);
@@ -33,6 +34,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   /** True while touching this enemy would not hurt the player. */
   get harmless(): boolean {
     return this.defeated || (this.cfg.boss === true && (!this.awake || this.mode === 'recover'));
+  }
+
+  /** Bosses only take damage while dizzy after a charge; everything else is always hittable. */
+  get vulnerable(): boolean {
+    if (this.defeated) return false;
+    return !this.cfg.boss || (this.awake && this.mode === 'recover');
   }
 
   tick(time: number, playerX: number) {
@@ -70,7 +77,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.clearTint();
         this.setVelocityX(this.dir * (this.cfg.chargeSpeed ?? 300));
         if (time > this.stateUntil || body.blocked.left || body.blocked.right) {
-          this.enter('recover', time, 1400);
+          this.enter('recover', time, this.cfg.dizzyMs ?? 1400);
         }
         break;
       case 'recover':
@@ -83,6 +90,20 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         break;
     }
     this.setFlipX(this.dir > 0);
+    this.updateDizzyFx();
+  }
+
+  /** Stars above the head while the boss is hittable, so the window is obvious without reading. */
+  private updateDizzyFx() {
+    const show = this.mode === 'recover' && !this.defeated;
+    if (show && !this.dizzyFx) {
+      this.dizzyFx = this.scene.add.text(0, 0, '💫', { fontSize: '72px' }).setOrigin(0.5).setDepth(60);
+    }
+    if (this.dizzyFx) {
+      this.dizzyFx.setVisible(show);
+      this.dizzyFx.setPosition(this.x, this.y - this.displayHeight / 2 - 16);
+      this.dizzyFx.angle = Math.sin(this.scene.time.now / 120) * 12;
+    }
   }
 
   /** Back to the spawn point (used if an enemy ever leaves the level). */
@@ -96,9 +117,22 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.stateUntil = time + duration;
   }
 
+  /** Fresh fight: full health, asleep at its spawn point. Used when the player loses to the boss. */
+  resetFight() {
+    this.hp = this.cfg.hp;
+    this.awake = false;
+    this.mode = 'walk';
+    this.stateUntil = 0;
+    this.invulnUntil = 0;
+    this.clearTint().setTintMode(Phaser.TintModes.MULTIPLY);
+    this.setAlpha(1);
+    this.respawn();
+    this.updateDizzyFx();
+  }
+
   /** Returns true if the hit landed. */
   hit(time: number): boolean {
-    if (this.defeated || time < this.invulnUntil) return false;
+    if (!this.vulnerable || time < this.invulnUntil) return false;
     this.hp -= 1;
     this.invulnUntil = time + (this.cfg.boss ? 900 : 0);
     if (this.hp <= 0) {
@@ -114,6 +148,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   private defeat() {
     this.defeated = true;
+    this.dizzyFx?.destroy();
+    this.dizzyFx = undefined;
     this.clearTint();
     (this.body as Phaser.Physics.Arcade.Body).enable = false;
     const star = this.scene.add

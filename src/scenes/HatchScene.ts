@@ -30,16 +30,20 @@ export class HatchScene extends Phaser.Scene {
     const { width, height } = this.scale;
     this.add.text(width / 2, 80, '🐣 ?', { fontSize: '80px' }).setOrigin(0.5);
 
+    // Cards shrink on narrow (4:3) screens so both always fit with a margin.
+    const cardW = Math.min(360, width / 2 - 36);
+    const gap = cardW / 2 + 12;
+    const picScale = (cardW / 360) * 1.9;
     const options: { key: Species; x: number }[] = [
-      { key: 'lizard', x: width / 2 - 230 },
-      { key: 'snake', x: width / 2 + 230 },
+      { key: 'lizard', x: width / 2 - gap },
+      { key: 'snake', x: width / 2 + gap },
     ];
     for (const o of options) {
       const card = this.add
-        .rectangle(o.x, height / 2 + 40, 360, 300, 0xffffff, 0.92)
+        .rectangle(o.x, height / 2 + 40, cardW, 300, 0xffffff, 0.92)
         .setStrokeStyle(8, 0xffd54f)
         .setInteractive({ useHandCursor: true });
-      const pic = this.add.image(o.x, height / 2 + 40, o.key).setScale(1.9);
+      const pic = this.add.image(o.x, height / 2 + 40, o.key).setScale(picScale);
       this.tweens.add({ targets: pic, y: pic.y - 10, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
       card.on('pointerdown', () => this.choose(o.key));
     }

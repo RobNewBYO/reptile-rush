@@ -12,8 +12,11 @@ export interface FormConfig {
   jumpVelocity: number;
   /** Egg rolls; other forms walk/slither. */
   rolls: boolean;
-  /** The action button: a short dash that defeats what it touches. */
-  attack: { speed: number; duration: number; cooldown: number; icon: string };
+  /**
+   * The action button: a short dash that defeats what it touches.
+   * `cooldown` applies after a landed hit; `missCooldown` after a whiff, so mashing is slower than aiming.
+   */
+  attack: { speed: number; duration: number; cooldown: number; missCooldown: number; icon: string };
 }
 
 const EGG: FormConfig = {
@@ -24,7 +27,7 @@ const EGG: FormConfig = {
   speed: 220,
   jumpVelocity: 520,
   rolls: true,
-  attack: { speed: 480, duration: 260, cooldown: 600, icon: '💥' },
+  attack: { speed: 480, duration: 260, cooldown: 500, missCooldown: 900, icon: '💥' },
 };
 
 /** Texture sizes for the placeholder reptiles (see BootScene). */
@@ -40,7 +43,7 @@ const HATCHLING: Omit<FormConfig, 'texture' | 'body'> = {
   jumpVelocity: 560,
   rolls: false,
   // Quicker, snappier chomp than the egg's bonk.
-  attack: { speed: 580, duration: 190, cooldown: 380, icon: '🦷' },
+  attack: { speed: 580, duration: 190, cooldown: 350, missCooldown: 800, icon: '🦷' },
 };
 
 /** Resolve an episode's form for the reptile the kid chose. */
