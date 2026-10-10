@@ -15,6 +15,8 @@ export class Controls {
   /** Set by the level; dims the on-screen action button while the attack is cooling down. */
   actionReady = true;
   private actionPad: Phaser.GameObjects.GameObject[] = [];
+  private actionLabel?: Phaser.GameObjects.Text;
+  private pendingIcon = '💥';
   private touch: ControlState = { left: false, right: false, jump: false, action: false };
 
   constructor(scene: Phaser.Scene) {
@@ -43,7 +45,10 @@ export class Controls {
         .setOrigin(0.5)
         .setScrollFactor(0)
         .setDepth(101);
-      if (key === 'action') this.actionPad = [c, label2];
+      if (key === 'action') {
+        this.actionPad = [c, label2];
+        this.actionLabel = label2.setText(this.pendingIcon);
+      }
       const set = (v: boolean) => {
         this.touch[key] = v;
         c.setFillStyle(0xffffff, v ? 0.5 : 0.28);
@@ -56,6 +61,17 @@ export class Controls {
     pad(250, H - 80, 62, '▶', 'right');
     pad(W - 90, H - 80, 62, '⬆', 'jump');
     pad(W - 250, H - 80, 62, '💥', 'action');
+  }
+
+  /** The action button shows the current character's ability. */
+  setActionIcon(icon: string) {
+    this.pendingIcon = icon;
+    this.actionLabel?.setText(icon);
+  }
+
+  /** Release any held touch buttons (e.g. after the level was paused under an overlay). */
+  reset() {
+    this.touch = { left: false, right: false, jump: false, action: false };
   }
 
   update() {

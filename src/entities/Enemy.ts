@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { EnemyConfig } from '../config/enemies';
+import { Sfx } from '../systems/Sfx';
 
 type BossState = 'walk' | 'telegraph' | 'charge' | 'recover';
 
@@ -16,7 +17,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private mode: BossState = 'walk';
   private stateUntil = 0;
   private invulnUntil = 0;
-  private dizzyFx?: Phaser.GameObjects.Text;
+  private statusFx?: Phaser.GameObjects.Text;
+  private afraidUntil = 0;
+  private knockUntil = 0;
+  private lastTick = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, cfg: EnemyConfig, patrol = 150) {
     super(scene, x, y, cfg.texture);
@@ -33,7 +37,16 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   /** True while touching this enemy would not hurt the player. */
   get harmless(): boolean {
-    return this.defeated || (this.cfg.boss === true && (!this.awake || this.mode === 'recover'));
+    return (
+      this.defeated ||
+      this.afraid ||
+      (this.cfg.boss === true && (!this.awake || this.mode === 'recover'))
+    );
+  }
+
+  /** Frozen with fear (lizard's mean look): can't move or hurt anyone. */
+  get afraid(): boolean {
+    return this.scene.time.now < this.afraidUntil;
   }
 
   /** Bosses only take damage while dizzy after a charge; everything else is always hittable. */
@@ -45,6 +58,20 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   tick(time: number, playerX: number) {
     if (this.defeated) return;
     const body = this.body as Phaser.Physics.Arcade.Body;
+    const dt = this.lastTick ? time - this.lastTick : 0;
+    this.lastTick = time;
+
+    if (time < this.afraidUntil) {
+      this.setVelocityX(0);
+      // A scared boss's attack pattern pauses too, instead of running out while it's frozen.
+      if (this.cfg.boss) this.stateUntil += dt;
+      this.updateStatusFx();
+      return;
+    }
+    if (time < this.knockUntil) {
+      this.updateStatusFx();
+      return;
+    }
 
     if (!this.cfg.boss) {
       if (this.x < this.homeX - this.patrol || body.blocked.left) this.dir = 1;
@@ -90,20 +117,37 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         break;
     }
     this.setFlipX(this.dir > 0);
-    this.updateDizzyFx();
+    this.updateStatusFx();
   }
 
-  /** Stars above the head while the boss is hittable, so the window is obvious without reading. */
-  private updateDizzyFx() {
-    const show = this.mode === 'recover' && !this.defeated;
-    if (show && !this.dizzyFx) {
-      this.dizzyFx = this.scene.add.text(0, 0, '💫', { fontSize: '72px' }).setOrigin(0.5).setDepth(60);
+  /** Icon above the head: 💫 while a boss is hittable, 😨 while scared. Readable without text. */
+  private updateStatusFx() {
+    const emoji =
+      this.defeated ? null : this.afraid ? '😨' : this.cfg.boss && this.mode === 'recover' ? '💫' : null;
+    if (emoji && !this.statusFx) {
+      this.statusFx = this.scene.add.text(0, 0, emoji, { fontSize: '72px' }).setOrigin(0.5).setDepth(60);
     }
-    if (this.dizzyFx) {
-      this.dizzyFx.setVisible(show);
-      this.dizzyFx.setPosition(this.x, this.y - this.displayHeight / 2 - 16);
-      this.dizzyFx.angle = Math.sin(this.scene.time.now / 120) * 12;
+    if (this.statusFx) {
+      if (emoji) this.statusFx.setText(emoji);
+      this.statusFx.setVisible(!!emoji);
+      this.statusFx.setPosition(this.x, this.y - this.displayHeight / 2 - 16);
+      this.statusFx.angle = Math.sin(this.scene.time.now / 120) * 12;
+      this.statusFx.setFontSize(emoji === '😨' ? 44 : 72);
     }
+  }
+
+  /** Freeze with fear. Bosses only flinch briefly. */
+  scare(now: number, ms: number) {
+    if (this.defeated) return;
+    this.afraidUntil = now + (this.cfg.boss ? Math.min(ms, 1200) : ms);
+    this.setVelocityX(0);
+  }
+
+  /** Brief push-back (water gun). Ignored by bosses. */
+  knock(now: number, ms: number, vx: number) {
+    if (this.defeated || this.cfg.boss) return;
+    this.knockUntil = now + ms;
+    this.setVelocityX(vx);
   }
 
   /** Back to the spawn point (used if an enemy ever leaves the level). */
@@ -113,6 +157,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   private enter(next: BossState, time: number, duration: number) {
+    if (next === 'telegraph') Sfx.play('telegraph');
+    if (next === 'recover') Sfx.play('dizzy');
     this.mode = next;
     this.stateUntil = time + duration;
   }
@@ -126,14 +172,16 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.invulnUntil = 0;
     this.clearTint().setTintMode(Phaser.TintModes.MULTIPLY);
     this.setAlpha(1);
+    this.afraidUntil = 0;
+    this.knockUntil = 0;
     this.respawn();
-    this.updateDizzyFx();
+    this.updateStatusFx();
   }
 
-  /** Returns true if the hit landed. */
-  hit(time: number): boolean {
+  /** Returns true if the hit landed. `damage` is how many hit points it removes. */
+  hit(time: number, damage = 1): boolean {
     if (!this.vulnerable || time < this.invulnUntil) return false;
-    this.hp -= 1;
+    this.hp -= damage;
     this.invulnUntil = time + (this.cfg.boss ? 900 : 0);
     if (this.hp <= 0) {
       this.defeat();
@@ -148,8 +196,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   private defeat() {
     this.defeated = true;
-    this.dizzyFx?.destroy();
-    this.dizzyFx = undefined;
+    this.statusFx?.destroy();
+    this.statusFx = undefined;
+    Sfx.play(this.cfg.boss ? 'bossDefeat' : 'squeak');
     this.clearTint();
     (this.body as Phaser.Physics.Arcade.Body).enable = false;
     const star = this.scene.add

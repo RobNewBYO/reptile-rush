@@ -5,9 +5,13 @@ import { HatchScene } from './scenes/HatchScene';
 import { LevelSelectScene } from './scenes/LevelSelectScene';
 import { ResultsScene } from './scenes/ResultsScene';
 import { TitleScene } from './scenes/TitleScene';
+import { CharacterScene } from './scenes/CharacterScene';
+import { Save } from './systems/Save';
+import { Sfx, installAudioUnlock } from './systems/Sfx';
 import { GAME_HEIGHT, computeGameWidth, isLandscape } from './systems/viewport';
 
 const bootedLandscape = isLandscape();
+installAudioUnlock();
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -24,7 +28,7 @@ const game = new Phaser.Game({
     arcade: { gravity: { x: 0, y: 1200 }, debug: false },
   },
   input: { activePointers: 3 },
-  scene: [BootScene, TitleScene, LevelSelectScene, LevelScene, ResultsScene, HatchScene],
+  scene: [BootScene, TitleScene, LevelSelectScene, LevelScene, ResultsScene, HatchScene, CharacterScene],
 });
 
 // Opened in portrait, then rotated: the canvas was sized for the wrong aspect, so rebuild it once.
@@ -34,7 +38,9 @@ window.addEventListener('resize', () => {
 });
 
 // Dev-only handle for smoke tests / debugging.
-if (import.meta.env.DEV) (window as unknown as { __game: Phaser.Game }).__game = game;
+if (import.meta.env.DEV) {
+  Object.assign(window, { __game: game, __sfx: Sfx, __save: Save });
+}
 
 // Offline support / installability. Production only so dev hot-reload isn't cached.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {

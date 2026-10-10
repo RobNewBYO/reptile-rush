@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { roundButton } from './ui';
+import { addMuteButton, roundButton } from './ui';
 
 export class TitleScene extends Phaser.Scene {
   constructor() {
@@ -25,6 +25,7 @@ export class TitleScene extends Phaser.Scene {
 
     const play = roundButton(this, width / 2, height - 90, 62, '▶', () => this.scene.start('LevelSelect'));
     this.tweens.add({ targets: play, scale: 1.1, duration: 700, yoyo: true, repeat: -1 });
+    addMuteButton(this, width - 48, 48);
     this.input.keyboard?.once('keydown-SPACE', () => this.scene.start('LevelSelect'));
   }
 }

@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import { EPISODES } from '../config/episodes';
+import { CHARACTERS } from '../config/characters';
 import { Save } from '../systems/Save';
+import { Sfx } from '../systems/Sfx';
+import { addMuteButton } from './ui';
 
 /** Icon-only level picker. A level unlocks when the one before it is complete. */
 export class LevelSelectScene extends Phaser.Scene {
@@ -12,6 +15,24 @@ export class LevelSelectScene extends Phaser.Scene {
     const { width } = this.scale;
     this.cameras.main.setBackgroundColor('#2a6f3b').fadeIn(200);
 
+    addMuteButton(this, width - 48, 48);
+
+    // Change character any time once hatched.
+    if (Save.character) {
+      const { height } = this.scale;
+      const swap = this.add
+        .circle(width - 70, height - 70, 52, 0xffffff, 0.92)
+        .setStrokeStyle(6, 0xffd54f)
+        .setInteractive({ useHandCursor: true });
+      const pic = this.add.image(width - 70, height - 70, CHARACTERS[Save.character].texture);
+      pic.setScale(Math.min(0.42, 70 / pic.width));
+      this.add.text(width - 36, height - 30, '⇄', { fontSize: '30px', color: '#2a6f3b' }).setOrigin(0.5);
+      swap.on('pointerdown', () => {
+        Sfx.play('ui');
+        this.scene.start('Characters', { overlay: false, returnTo: 'LevelSelect', canClose: true });
+      });
+    }
+
     let prevDone = true; // first level always open
     EPISODES.forEach((ep, row) => {
       const y = 140 + row * 190;
@@ -20,9 +41,13 @@ export class LevelSelectScene extends Phaser.Scene {
 
       this.add.rectangle(width / 2, y, width - 80, 160, 0x000000, 0.25).setStrokeStyle(4, 0xffffff, 0.3);
 
-      // Episode icon: shows the chosen reptile once hatched.
-      const icon = ep.id === 2 && Save.species ? (Save.species === 'lizard' ? '🦎' : '🐍') : ep.icon;
-      this.add.text(110, y, icon, { fontSize: '84px' }).setOrigin(0.5).setAlpha(built ? 1 : 0.5);
+      // Episode icon: shows the chosen character once hatched.
+      if (ep.id > 1 && Save.character) {
+        const pic = this.add.image(110, y, CHARACTERS[Save.character].texture);
+        pic.setScale(Math.min(0.62, 90 / pic.width)).setAlpha(built ? 1 : 0.5);
+      } else {
+        this.add.text(110, y, ep.icon, { fontSize: '84px' }).setOrigin(0.5).setAlpha(built ? 1 : 0.5);
+      }
 
       if (!built) {
         this.add.text(width / 2 + 40, y, '🔒', { fontSize: '64px' }).setOrigin(0.5);
@@ -52,9 +77,10 @@ export class LevelSelectScene extends Phaser.Scene {
 
         if (open) {
           btn.setInteractive({ useHandCursor: true });
-          btn.on('pointerdown', () =>
-            this.scene.start('Level', { levelId: id, formId: ep.form }),
-          );
+          btn.on('pointerdown', () => {
+            Sfx.play('ui');
+            this.scene.start('Level', { levelId: id, formId: ep.form });
+          });
         }
       });
 

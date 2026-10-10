@@ -1,13 +1,17 @@
 import Phaser from 'phaser';
+import type { Ability } from '../config/characters';
 import { ENEMIES } from '../config/enemies';
 import { getForm, type FormConfig } from '../config/forms';
 import type { LevelConfig } from '../config/levels';
 import { Enemy } from '../entities/Enemy';
 import { Controls } from '../systems/Controls';
 import { Save } from '../systems/Save';
+import { Sfx } from '../systems/Sfx';
+import { addMuteButton } from './ui';
 
-const MAX_HEARTS = 3;
-const BOSS_BAR_W = 300;
+const EGG_HEARTS = 3;
+const BOSS_BAR_W = 220;
+const STOMP_BOUNCE = -380;
 
 export class LevelScene extends Phaser.Scene {
   private controls!: Controls;
@@ -15,23 +19,33 @@ export class LevelScene extends Phaser.Scene {
   private form!: FormConfig;
   private level!: LevelConfig;
   private enemies!: Phaser.Physics.Arcade.Group;
+  private shots!: Phaser.Physics.Arcade.Group;
   private boss!: Enemy;
 
-  private hearts = MAX_HEARTS;
+  private maxHearts = EGG_HEARTS;
+  private hearts = EGG_HEARTS;
   private heartIcons: Phaser.GameObjects.Image[] = [];
   private hurtCount = 0;
   private facing = 1;
   private invulnUntil = 0;
+  /** Egg dash: contact defeats mammals until this time. */
   private bonkUntil = 0;
-  private bonkReadyAt = 0;
+  /** When the action button can be used again (egg dash or character ability). */
+  private actionReadyAt = 0;
   private clinkReadyAt = 0;
   private finished = false;
   /** Hearts hit zero; waiting out the 💔 beat before restarting the level or boss fight. */
   private dying = false;
 
+  private jumpsLeft = 0;
+  private prevJump = false;
+  private slamming = false;
+  private slamStart = 0;
+
   private bossBarBg!: Phaser.GameObjects.Rectangle;
   private bossBar!: Phaser.GameObjects.Rectangle;
   private bossIcon!: Phaser.GameObjects.Text;
+  private badge?: Phaser.GameObjects.Image;
 
   constructor() {
     super('Level');
@@ -39,15 +53,20 @@ export class LevelScene extends Phaser.Scene {
 
   init(data: { levelId: string; formId: string; hurt?: number }) {
     this.level = this.cache.json.get(data.levelId) as LevelConfig;
-    this.form = getForm(data.formId, Save.species);
-    this.hearts = MAX_HEARTS;
+    this.form = getForm(data.formId, Save.character);
+    this.maxHearts = this.form.character?.maxHearts ?? EGG_HEARTS;
+    this.hearts = this.maxHearts;
     // Hurts carry across level restarts, so a restart shows up in the final stars.
     this.hurtCount = data.hurt ?? 0;
     this.finished = false;
     this.dying = false;
     this.clinkReadyAt = 0;
-    this.invulnUntil = this.bonkUntil = this.bonkReadyAt = 0;
+    this.invulnUntil = this.bonkUntil = this.actionReadyAt = 0;
+    this.jumpsLeft = 0;
+    this.prevJump = false;
+    this.slamming = false;
     this.heartIcons = [];
+    this.badge = undefined;
   }
 
   create() {
@@ -65,18 +84,13 @@ export class LevelScene extends Phaser.Scene {
     // Spawn in the gap between the left and right touch buttons, not underneath one.
     this.player = this.physics.add.sprite(360, height - 140, this.form.texture);
     this.player.setCollideWorldBounds(true).setDragX(900);
-    this.player.setScale(this.form.scale);
-    const tex = this.player.frame;
-    const { w, h } = this.form.body;
-    this.player.setSize(w, h).setOffset((tex.width - w) / 2, tex.height - h);
+    this.applyFormToPlayer();
     this.physics.add.collider(this.player, solids);
 
-    // Enemies
     // Group defaults override per-sprite settings, so world-bounds collision must be set here.
     this.enemies = this.physics.add.group({ collideWorldBounds: true });
     for (const e of this.level.enemies) {
-      const en = new Enemy(this, e.x, height - 120, ENEMIES[e.type], e.patrol);
-      this.enemies.add(en);
+      this.enemies.add(new Enemy(this, e.x, height - 120, ENEMIES[e.type], e.patrol));
     }
     this.boss = new Enemy(this, this.level.boss.x, height - 140, ENEMIES[this.level.boss.type]);
     this.enemies.add(this.boss);
@@ -84,47 +98,137 @@ export class LevelScene extends Phaser.Scene {
     this.physics.add.collider(this.enemies, solids);
     this.physics.add.overlap(this.player, this.enemies, (_p, e) => this.onContact(e as unknown as Enemy));
 
+    // Projectiles (venom, water).
+    this.shots = this.physics.add.group({ allowGravity: false });
+    this.physics.add.overlap(this.shots, this.enemies, (s, e) =>
+      this.onShotHit(s as Phaser.Physics.Arcade.Sprite, e as unknown as Enemy),
+    );
+    this.physics.add.collider(this.shots, solids, (s) => (s as Phaser.GameObjects.GameObject).destroy());
+
     this.cameras.main.setBounds(0, 0, width, height);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
     this.controls = new Controls(this);
+    this.controls.setActionIcon(this.actionIcon());
     this.buildHud();
 
-    // Home button (top-right) back to level select.
+    const w = this.scale.width;
     const home = this.add
-      .circle(this.scale.width - 48, 48, 36, 0x000000, 0.4)
+      .circle(w - 48, 48, 36, 0x000000, 0.4)
       .setScrollFactor(0)
       .setDepth(100)
       .setInteractive();
-    this.add.text(this.scale.width - 48, 48, '⌂', { fontSize: '44px' }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
+    this.add.text(w - 48, 48, '⌂', { fontSize: '44px' }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
     home.on('pointerdown', () => this.scene.start('LevelSelect'));
+    addMuteButton(this, w - 132, 48);
+
+    // Come back from the character picker (the level is paused underneath it).
+    const onResume = () => this.applyCharacter();
+    this.events.on(Phaser.Scenes.Events.RESUME, onResume);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off(Phaser.Scenes.Events.RESUME, onResume));
+  }
+
+  private actionIcon(): string {
+    return this.form.character?.ability.icon ?? this.form.attack?.icon ?? '💥';
+  }
+
+  /** Texture, scale and hitbox for the current form (used at start and on a character switch). */
+  private applyFormToPlayer() {
+    this.player.setTexture(this.form.texture);
+    this.player.setScale(this.form.scale);
+    const { w, h } = this.form.body;
+    const frame = this.player.frame;
+    this.player.setSize(w, h).setOffset((frame.width - w) / 2, frame.height - h);
   }
 
   private buildHud() {
-    for (let i = 0; i < MAX_HEARTS; i++) {
+    this.heartIcons.forEach((h) => h.destroy());
+    this.heartIcons = [];
+    for (let i = 0; i < this.maxHearts; i++) {
       this.heartIcons.push(
         this.add.image(36 + i * 44, 34, 'heart').setScrollFactor(0).setDepth(100).setScale(1.2),
       );
     }
-    const cx = this.scale.width / 2;
+    this.refreshHearts();
+
+    // Boss bar sits to the left of the mute/home buttons so it never collides with the hearts.
+    const barRight = this.scale.width - 190;
+    const barCx = barRight - BOSS_BAR_W / 2;
     this.bossBarBg = this.add
-      .rectangle(cx + 20, 34, BOSS_BAR_W + 8, 26, 0x000000, 0.5)
+      .rectangle(barCx, 34, BOSS_BAR_W + 8, 26, 0x000000, 0.5)
       .setScrollFactor(0)
       .setDepth(100)
       .setVisible(false);
     this.bossBar = this.add
-      .rectangle(cx + 20 - BOSS_BAR_W / 2, 34, BOSS_BAR_W, 18, 0xe53935)
+      .rectangle(barRight - BOSS_BAR_W, 34, BOSS_BAR_W, 18, 0xe53935)
       .setOrigin(0, 0.5)
       .setScrollFactor(0)
       .setDepth(101)
       .setVisible(false);
     this.bossIcon = this.add
-      .text(cx - BOSS_BAR_W / 2 - 24, 34, this.boss.cfg.icon ?? '👹', { fontSize: '36px' })
+      .text(barRight - BOSS_BAR_W - 28, 34, this.boss.cfg.icon ?? '👹', { fontSize: '36px' })
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(100)
       .setVisible(false);
+
+    // Character badge: tap to switch character at any time (egg has no choice).
+    if (this.form.character) {
+      const bg = this.add
+        .circle(48, 112, 40, 0x000000, 0.4)
+        .setStrokeStyle(4, 0xffffff, 0.7)
+        .setScrollFactor(0)
+        .setDepth(100)
+        .setInteractive({ useHandCursor: true });
+      this.badge = this.add.image(48, 112, this.form.texture).setScrollFactor(0).setDepth(101);
+      this.badge.setScale(Math.min(0.42, 56 / this.badge.width));
+      this.add.text(76, 144, '⇄', { fontSize: '26px', color: '#ffffff' }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
+      bg.on('pointerdown', () => this.openPicker());
+      this.input.keyboard?.on('keydown-C', () => this.openPicker());
+    }
   }
+
+  private openPicker() {
+    if (this.finished || this.dying || this.scene.isPaused()) return;
+    Sfx.play('ui');
+    this.scene.launch('Characters', { overlay: true, canClose: true });
+    this.scene.pause();
+  }
+
+  /** Called when the picker closes: swap to the chosen character, keeping the same fraction of health. */
+  private applyCharacter() {
+    this.controls.reset();
+    const next = getForm(this.form.id, Save.character);
+    if (!this.form.character || next.character?.id === this.form.character.id) return;
+
+    const frac = this.hearts / this.maxHearts;
+    this.form = next;
+    this.maxHearts = next.character!.maxHearts;
+    // Same fraction of health, so switching can't be used to refill hearts.
+    this.hearts = Math.max(1, Math.round(frac * this.maxHearts));
+    this.slamming = false;
+    this.jumpsLeft = 0;
+    this.bonkUntil = 0;
+
+    this.applyFormToPlayer();
+    this.badge?.setTexture(next.texture);
+    this.badge?.setScale(Math.min(0.42, 56 / this.badge.width));
+    this.controls.setActionIcon(this.actionIcon());
+    this.buildHud();
+
+    const now = this.time.now;
+    this.actionReadyAt = now + 400;
+    this.invulnUntil = Math.max(this.invulnUntil, now + 700); // short grace after the swap
+    this.puff(this.player.x, this.player.y);
+    Sfx.play('switch');
+  }
+
+  private puff(x: number, y: number) {
+    const p = this.add.text(x, y, '✨', { fontSize: '64px' }).setOrigin(0.5).setDepth(60);
+    this.tweens.add({ targets: p, scale: 1.8, alpha: 0, duration: 450, onComplete: () => p.destroy() });
+  }
+
+  // ----------------------------------------------------------------- combat
 
   private onContact(enemy: Enemy) {
     if (enemy.defeated || this.finished || this.dying) return;
@@ -138,11 +242,13 @@ export class LevelScene extends Phaser.Scene {
     if (stomp || bonking) {
       // A boss that isn't dizzy shrugs hits off: bounce away, no damage either way.
       if (enemy.cfg.boss && !enemy.vulnerable) {
-        this.clink(enemy, now, stomp, bonking);
+        this.clink(enemy.x, enemy.y - enemy.displayHeight / 2, now, stomp, bonking);
         return;
       }
-      if (enemy.hit(now)) {
-        if (stomp) this.player.setVelocityY(-380);
+      const dmg = stomp ? (this.form.character?.stompDamage ?? 1) : 1;
+      if (enemy.hit(now, dmg)) {
+        Sfx.play(stomp ? 'stomp' : 'bite');
+        if (stomp) this.player.setVelocityY(STOMP_BOUNCE);
         if (bonking) this.onBonkLanded(now);
       }
       return;
@@ -155,23 +261,34 @@ export class LevelScene extends Phaser.Scene {
   private onBonkLanded(now: number) {
     this.bonkUntil = now;
     this.player.setVelocityX(0);
-    this.bonkReadyAt = now + this.form.attack.cooldown;
+    this.actionReadyAt = now + (this.form.attack?.cooldown ?? 500);
     // Grace for other mammals overlapping this same frame, so ending the dash isn't unfair.
     this.invulnUntil = Math.max(this.invulnUntil, now + 300);
   }
 
-  private clink(enemy: Enemy, now: number, stomp: boolean, bonking: boolean) {
+  private clink(x: number, y: number, now: number, stomp = false, bonking = false) {
     if (now < this.clinkReadyAt) return;
     this.clinkReadyAt = now + 250;
-    if (stomp) this.player.setVelocityY(-380);
+    Sfx.play('clink');
+    if (stomp) this.player.setVelocityY(STOMP_BOUNCE);
     if (bonking) {
       this.bonkUntil = now;
-      this.bonkReadyAt = now + this.form.attack.missCooldown;
+      this.actionReadyAt = now + (this.form.attack?.missCooldown ?? 800);
       this.player.setVelocity(-this.facing * 280, -220);
       this.invulnUntil = Math.max(this.invulnUntil, now + 400);
     }
-    const fx = this.add.text(enemy.x, enemy.y - enemy.displayHeight / 2, '🛡️', { fontSize: '44px' }).setOrigin(0.5).setDepth(60);
+    const fx = this.add.text(x, y, '🛡️', { fontSize: '44px' }).setOrigin(0.5).setDepth(60);
     this.tweens.add({ targets: fx, y: fx.y - 40, alpha: 0, duration: 450, onComplete: () => fx.destroy() });
+  }
+
+  /** Ranged / area damage: bosses only take it while dizzy, otherwise it clinks off. */
+  private zapEnemy(enemy: Enemy, now: number, damage = 1): boolean {
+    if (enemy.defeated) return false;
+    if (enemy.cfg.boss && !enemy.vulnerable) {
+      this.clink(enemy.x, enemy.y - enemy.displayHeight / 2, now);
+      return false;
+    }
+    return enemy.hit(now, damage);
   }
 
   private hurt(fromX: number) {
@@ -180,6 +297,8 @@ export class LevelScene extends Phaser.Scene {
     this.hearts -= 1;
     this.hurtCount += 1;
     this.invulnUntil = now + 1500;
+    this.slamming = false;
+    Sfx.play('hurt');
     this.cameras.main.shake(120, 0.006);
     this.player.setVelocity(this.player.x < fromX ? -320 : 320, -300);
     this.refreshHearts();
@@ -193,6 +312,7 @@ export class LevelScene extends Phaser.Scene {
    */
   private lose() {
     this.dying = true;
+    Sfx.play('lose');
     const bossFight = this.boss.awake && !this.boss.defeated;
     const { width, height } = this.scale;
 
@@ -215,7 +335,7 @@ export class LevelScene extends Phaser.Scene {
       this.bossBarBg.setVisible(false);
       this.bossBar.setVisible(false);
       this.bossIcon.setVisible(false);
-      this.hearts = MAX_HEARTS;
+      this.hearts = this.maxHearts;
       this.refreshHearts();
       // Just outside the arena, so the player walks in and wakes the boss on their own terms.
       (this.player.body as Phaser.Physics.Arcade.Body).reset(
@@ -224,26 +344,10 @@ export class LevelScene extends Phaser.Scene {
       );
       this.facing = 1;
       this.invulnUntil = this.time.now + 1500;
-      this.bonkUntil = this.bonkReadyAt = 0;
+      this.bonkUntil = this.actionReadyAt = 0;
+      this.slamming = false;
       this.dying = false;
       this.cameras.main.fadeIn(300);
-    });
-  }
-
-  private showAttackFx() {
-    const fx = this.add
-      .text(this.player.x + this.facing * 46, this.player.y - 6, this.form.attack.icon, {
-        fontSize: '40px',
-      })
-      .setOrigin(0.5)
-      .setDepth(50);
-    this.tweens.add({
-      targets: fx,
-      x: fx.x + this.facing * 40,
-      alpha: 0,
-      scale: 1.5,
-      duration: 260,
-      onComplete: () => fx.destroy(),
     });
   }
 
@@ -265,10 +369,178 @@ export class LevelScene extends Phaser.Scene {
     );
   }
 
+  // -------------------------------------------------------------- abilities
+
+  private useAbility(time: number) {
+    const dash = this.form.attack;
+    if (dash) {
+      // Egg: a short dash that defeats mammals it touches.
+      this.bonkUntil = time + dash.duration;
+      // Assume a whiff; onBonkLanded() shortens this if it connects.
+      this.actionReadyAt = time + dash.duration + dash.missCooldown;
+      this.attackFx(dash.icon);
+      Sfx.play('bite');
+      return;
+    }
+    const a = this.form.character!.ability;
+    this.actionReadyAt = time + a.cooldown;
+    switch (a.kind) {
+      case 'venom':
+      case 'water':
+        return this.fireShot(a);
+      case 'scare':
+        return this.scareNearby(a, time);
+      case 'thunder':
+        return this.thunder(a, time);
+      case 'slam':
+        return this.startSlam(time);
+      case 'tongue':
+        return this.tongue(a, time);
+    }
+  }
+
+  private attackFx(icon: string) {
+    const fx = this.add
+      .text(this.player.x + this.facing * 46, this.player.y - 6, icon, { fontSize: '40px' })
+      .setOrigin(0.5)
+      .setDepth(50);
+    this.tweens.add({
+      targets: fx,
+      x: fx.x + this.facing * 40,
+      alpha: 0,
+      scale: 1.5,
+      duration: 260,
+      onComplete: () => fx.destroy(),
+    });
+  }
+
+  /** Snake venom / turtle water gun. */
+  private fireShot(a: Ability) {
+    const venom = a.kind === 'venom';
+    Sfx.play(venom ? 'venom' : 'water');
+    const shot = this.shots.create(
+      this.player.x + this.facing * 40,
+      this.player.y - 4,
+      'shot',
+    ) as Phaser.Physics.Arcade.Sprite;
+    shot.setTint(venom ? 0x76ff03 : 0x4fc3f7).setScale(venom ? 1.1 : 0.8).setDepth(40);
+    shot.setData('kind', a.kind);
+    shot.setData('knockback', a.knockback ?? 0);
+    (shot.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+    shot.setVelocityX(this.facing * (a.speed ?? 500));
+    this.time.delayedCall(((a.range ?? 300) / (a.speed ?? 500)) * 1000, () => shot.active && shot.destroy());
+  }
+
+  private onShotHit(shot: Phaser.Physics.Arcade.Sprite, enemy: Enemy) {
+    if (!shot.active || enemy.defeated) return;
+    const now = this.time.now;
+    const dir = Math.sign(shot.body!.velocity.x) || 1;
+    const kb = (shot.getData('knockback') as number) ?? 0;
+    shot.destroy();
+    if (this.zapEnemy(enemy, now) || enemy.defeated) return;
+    if (kb > 0) enemy.knock(now, 260, dir * kb);
+  }
+
+  /** Lizard: every nearby mammal freezes with fear. */
+  private scareNearby(a: Ability, now: number) {
+    Sfx.play('scare');
+    const radius = a.radius ?? 300;
+    this.ring(this.player.x, this.player.y, radius, 0xb39ddb);
+    const face = this.add.text(this.player.x, this.player.y - 70, a.icon, { fontSize: '72px' }).setOrigin(0.5).setDepth(60);
+    this.tweens.add({ targets: face, y: face.y - 30, scale: 1.5, alpha: 0, duration: 700, onComplete: () => face.destroy() });
+    this.enemies.getChildren().forEach((e) => {
+      const en = e as unknown as Enemy;
+      if (Phaser.Math.Distance.Between(en.x, en.y, this.player.x, this.player.y) <= radius) {
+        en.scare(now, a.duration ?? 2500);
+      }
+    });
+  }
+
+  /** Axolotl: zap everything around you. */
+  private thunder(a: Ability, now: number) {
+    Sfx.play('zap');
+    const radius = a.radius ?? 200;
+    this.ring(this.player.x, this.player.y, radius, 0xffee58);
+    this.cameras.main.flash(120, 255, 255, 200);
+    this.enemies.getChildren().forEach((e) => {
+      const en = e as unknown as Enemy;
+      if (en.defeated) return;
+      if (Phaser.Math.Distance.Between(en.x, en.y, this.player.x, this.player.y) > radius) return;
+      const bolt = this.add.text(en.x, en.y - 20, '⚡', { fontSize: '56px' }).setOrigin(0.5).setDepth(60);
+      this.tweens.add({ targets: bolt, alpha: 0, scale: 1.6, duration: 380, onComplete: () => bolt.destroy() });
+      this.zapEnemy(en, now);
+    });
+  }
+
+  private ring(x: number, y: number, radius: number, color: number) {
+    const r = this.add.circle(x, y, 12, color, 0.25).setStrokeStyle(6, color).setDepth(40);
+    this.tweens.add({
+      targets: r,
+      scale: radius / 12,
+      alpha: 0,
+      duration: 380,
+      onComplete: () => r.destroy(),
+    });
+  }
+
+  /** Frog: a quick tongue flick straight ahead. */
+  private tongue(a: Ability, now: number) {
+    Sfx.play('tongue');
+    const range = a.range ?? 170;
+    const y = this.player.y - 8;
+    const startX = this.player.x + this.facing * 30;
+    const line = this.add
+      .rectangle(startX, y, 8, 10, 0xff6f91)
+      .setOrigin(this.facing > 0 ? 0 : 1, 0.5)
+      .setDepth(50);
+    this.tweens.add({
+      targets: line,
+      width: range,
+      duration: 90,
+      yoyo: true,
+      onComplete: () => line.destroy(),
+    });
+    this.enemies.getChildren().forEach((e) => {
+      const en = e as unknown as Enemy;
+      const dx = (en.x - this.player.x) * this.facing;
+      if (en.defeated || dx < -10 || dx > range + en.displayWidth / 2) return;
+      if (Math.abs(en.y - this.player.y) > 70 + en.displayHeight / 2) return;
+      this.zapEnemy(en, now);
+    });
+  }
+
+  /** Toad: leap and dive. Landing sends a shockwave that hits nearby (non-spiky) mammals. */
+  private startSlam(now: number) {
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    this.slamming = true;
+    this.slamStart = now;
+    if (body.blocked.down) this.player.setVelocity(this.facing * 300, -470);
+    else this.player.setVelocityY(900);
+  }
+
+  private landSlam(now: number) {
+    this.slamming = false;
+    const a = this.form.character!.ability;
+    const radius = a.radius ?? 120;
+    Sfx.play('slam');
+    this.cameras.main.shake(140, 0.007);
+    this.ring(this.player.x, this.player.y + 20, radius, 0xffab40);
+    const dmg = this.form.character!.stompDamage;
+    this.enemies.getChildren().forEach((e) => {
+      const en = e as unknown as Enemy;
+      if (en.defeated || en.cfg.spiky) return;
+      if (Phaser.Math.Distance.Between(en.x, en.y, this.player.x, this.player.y) > radius) return;
+      this.zapEnemy(en, now, dmg);
+    });
+  }
+
+  // ----------------------------------------------------------------- update
+
   update(time: number) {
     this.controls.update();
     const c = this.controls.state;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
+    const ch = this.form.character;
 
     if (!this.finished && !this.dying) {
       if (c.left) {
@@ -278,22 +550,36 @@ export class LevelScene extends Phaser.Scene {
         this.player.setVelocityX(this.form.speed);
         this.facing = 1;
       }
-      if (c.jump && body.blocked.down) this.player.setVelocityY(-this.form.jumpVelocity);
 
-      // Bonk: a short dash that defeats mammals it touches.
-      if (c.action && time >= this.bonkReadyAt) {
-        this.bonkUntil = time + this.form.attack.duration;
-        // Assume a whiff; onBonkLanded() shortens this if it connects.
-        this.bonkReadyAt = time + this.form.attack.duration + this.form.attack.missCooldown;
-        this.showAttackFx();
+      // Jumping; the frog gets one extra jump while airborne (needs a fresh press).
+      if (body.blocked.down) {
+        this.jumpsLeft = ch?.doubleJump ? 1 : 0;
+        if (c.jump) {
+          this.player.setVelocityY(-this.form.jumpVelocity);
+          Sfx.play('jump');
+        }
+      } else if (c.jump && !this.prevJump && this.jumpsLeft > 0) {
+        this.jumpsLeft -= 1;
+        this.player.setVelocityY(-this.form.jumpVelocity * 0.92);
+        Sfx.play('doubleJump');
+        this.puff(this.player.x, this.player.y + 10);
       }
-      if (time < this.bonkUntil) {
+
+      if (c.action && time >= this.actionReadyAt) this.useAbility(time);
+
+      if (time < this.bonkUntil && this.form.attack) {
         this.player.setVelocityX(this.facing * this.form.attack.speed);
         this.player.setTint(0xffe066);
+      } else if (this.slamming) {
+        this.player.setTint(0xffab40);
+        // Past the top of the leap: dive.
+        if (body.velocity.y > 0 && body.velocity.y < 900) this.player.setVelocityY(900);
+        if (body.blocked.down && time > this.slamStart + 120) this.landSlam(time);
       } else {
         this.player.clearTint();
       }
     }
+    this.prevJump = c.jump;
 
     this.player.setFlipX(!this.form.rolls && this.facing < 0);
 
@@ -302,7 +588,7 @@ export class LevelScene extends Phaser.Scene {
 
     if (this.form.rolls) this.player.angle += body.velocity.x * 0.02;
 
-    this.controls.actionReady = time >= this.bonkReadyAt;
+    this.controls.actionReady = time >= this.actionReadyAt;
 
     // Boss wakes when the player gets close.
     if (!this.boss.awake && this.player.x > this.level.boss.wakeX) {

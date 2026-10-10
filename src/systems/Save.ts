@@ -1,7 +1,11 @@
-export type Species = 'lizard' | 'snake';
+import type { CharacterId } from '../config/characters';
+
+export type { CharacterId };
 
 interface SaveData {
-  species: Species | null;
+  /** The character currently chosen (field name kept for saves made before there were six). */
+  species: CharacterId | null;
+  muted: boolean;
   /** Best stars (1-3) per completed level id. */
   stars: Record<string, number>;
 }
@@ -9,7 +13,7 @@ interface SaveData {
 const KEY = 'reptile-rush-save-v1';
 
 function fresh(): SaveData {
-  return { species: null, stars: {} };
+  return { species: null, muted: false, stars: {} };
 }
 
 /** localStorage can throw (private mode, blocked storage): never let that break the game. */
@@ -37,8 +41,18 @@ export const Save = {
   get species() {
     return data.species;
   },
-  setSpecies(s: Species) {
-    data.species = s;
+  get character() {
+    return data.species;
+  },
+  setCharacter(c: CharacterId) {
+    data.species = c;
+    persist();
+  },
+  get muted() {
+    return data.muted;
+  },
+  setMuted(m: boolean) {
+    data.muted = m;
     persist();
   },
   starsFor(levelId: string): number {

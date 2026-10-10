@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { episodeOf } from '../config/episodes';
 import { Save } from '../systems/Save';
-import { roundButton } from './ui';
+import { Sfx } from '../systems/Sfx';
+import { addMuteButton, roundButton } from './ui';
 
 /** Level-complete screen: stars by how few times you were hurt. No text needed. */
 export class ResultsScene extends Phaser.Scene {
@@ -20,12 +21,14 @@ export class ResultsScene extends Phaser.Scene {
     const { levelId, formId, hurt } = this.args;
     this.cameras.main.setBackgroundColor('#2a6f3b').fadeIn(300);
 
+    Sfx.play('complete');
     const stars = Math.max(1, 3 - hurt);
     Save.complete(levelId, stars);
 
     this.add.text(width / 2, 110, '🎉', { fontSize: '110px' }).setOrigin(0.5);
     for (let i = 0; i < 3; i++) {
       const got = i < stars;
+      if (got) this.time.delayedCall(500 + i * 250, () => Sfx.play('star'));
       const s = this.add
         .star(width / 2 + (i - 1) * 130, 260, 5, 22, 52, got ? 0xffd54f : 0x555555)
         .setScale(0);
@@ -39,6 +42,7 @@ export class ResultsScene extends Phaser.Scene {
       });
     }
 
+    addMuteButton(this, width - 48, 48);
     const ep = episodeOf(levelId);
     const idx = ep.levels.indexOf(levelId);
     const next = () => {

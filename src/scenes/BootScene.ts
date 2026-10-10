@@ -115,6 +115,59 @@ export class BootScene extends Phaser.Scene {
     g.generateTexture('bear', 180, 124);
     g.clear();
 
+    // Turtle (placeholder, faces right)
+    g.fillStyle(0x66bb6a).fillTriangle(16, 64, 2, 74, 26, 74);
+    g.fillStyle(0x66bb6a).fillRect(32, 70, 16, 16).fillRect(80, 70, 16, 16);
+    g.fillStyle(0x2e7d32).fillEllipse(64, 54, 94, 64);
+    g.fillStyle(0x1b5e20).fillEllipse(64, 52, 60, 38);
+    g.fillStyle(0xa5d6a7).fillCircle(64, 52, 8).fillCircle(44, 54, 6).fillCircle(84, 54, 6);
+    g.fillStyle(0x66bb6a).fillCircle(116, 58, 17);
+    g.fillStyle(0xffffff).fillCircle(122, 53, 5);
+    g.fillStyle(0x000000).fillCircle(124, 53, 2.5);
+    g.generateTexture('turtle', 140, 92);
+    g.clear();
+
+    // Toad (placeholder, faces right): warty, round, big yellow eyes
+    g.fillStyle(0x6d4c41).fillEllipse(40, 80, 34, 16).fillEllipse(88, 82, 28, 14);
+    g.fillStyle(0x8d6e63).fillEllipse(66, 58, 90, 62);
+    g.fillStyle(0xbcaaa4).fillEllipse(70, 72, 52, 20);
+    g.fillStyle(0x8d6e63).fillCircle(104, 52, 20);
+    g.fillStyle(0x6d4c41).fillCircle(48, 46, 5).fillCircle(66, 40, 4).fillCircle(80, 50, 5).fillCircle(42, 64, 4);
+    g.fillStyle(0xffe082).fillCircle(98, 32, 9).fillCircle(114, 34, 9);
+    g.fillStyle(0x000000).fillCircle(100, 32, 4).fillCircle(116, 34, 4);
+    g.lineStyle(3, 0x4e342e).lineBetween(96, 62, 124, 60);
+    g.generateTexture('toad', 140, 92);
+    g.clear();
+
+    // Axolotl (placeholder, faces right): pink, feathery gills, smile
+    g.fillStyle(0xf48fb1).fillTriangle(30, 58, 0, 36, 0, 78);
+    g.fillStyle(0xf8bbd0).fillEllipse(72, 58, 96, 34);
+    g.fillStyle(0xf48fb1).fillRect(54, 70, 10, 16).fillRect(88, 70, 10, 16);
+    g.fillStyle(0xf8bbd0).fillCircle(120, 54, 22);
+    g.lineStyle(6, 0xe91e63);
+    g.lineBetween(110, 40, 96, 18).lineBetween(118, 34, 114, 10).lineBetween(128, 38, 138, 14);
+    g.fillStyle(0xe91e63).fillCircle(96, 18, 5).fillCircle(114, 10, 5).fillCircle(138, 14, 5);
+    g.fillStyle(0x000000).fillCircle(128, 50, 3.5);
+    g.lineStyle(2.5, 0x880e4f).lineBetween(124, 62, 140, 60);
+    g.generateTexture('axolotl', 160, 92);
+    g.clear();
+
+    // Frog (placeholder, faces right): long back legs, bulging eyes
+    g.fillStyle(0x43a047).fillEllipse(40, 72, 48, 26).fillTriangle(16, 86, 50, 86, 34, 70);
+    g.fillStyle(0x66bb6a).fillEllipse(64, 56, 82, 52);
+    g.fillStyle(0xdcedc8).fillEllipse(72, 68, 46, 16);
+    g.fillStyle(0x66bb6a).fillCircle(100, 48, 22).fillRect(84, 70, 10, 16);
+    g.fillStyle(0xffffff).fillCircle(98, 26, 10).fillCircle(114, 28, 10);
+    g.fillStyle(0x000000).fillCircle(101, 26, 4).fillCircle(117, 28, 4);
+    g.lineStyle(3, 0x2e7d32).lineBetween(100, 58, 122, 54);
+    g.generateTexture('frog', 140, 92);
+    g.clear();
+
+    // Projectile (tinted per ability)
+    g.fillStyle(0xffffff).fillCircle(10, 10, 10);
+    g.generateTexture('shot', 20, 20);
+    g.clear();
+
     // Heart
     g.fillStyle(0xe53935).fillCircle(10, 10, 8).fillCircle(22, 10, 8);
     g.fillTriangle(2, 13, 30, 13, 16, 29);

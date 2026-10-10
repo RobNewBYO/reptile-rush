@@ -1,6 +1,9 @@
-import type { Species } from '../systems/Save';
+import { CHARACTERS, type CharacterConfig, type CharacterId } from './characters';
 
-/** A "form" is the reptile's life stage. Each episode uses one. */
+/**
+ * A "form" is the life stage an episode uses (egg, hatchling, ...).
+ * From the hatchling onward the player's stats and ability come from the chosen character.
+ */
 export interface FormConfig {
   id: string;
   texture: string;
@@ -12,11 +15,9 @@ export interface FormConfig {
   jumpVelocity: number;
   /** Egg rolls; other forms walk/slither. */
   rolls: boolean;
-  /**
-   * The action button: a short dash that defeats what it touches.
-   * `cooldown` applies after a landed hit; `missCooldown` after a whiff, so mashing is slower than aiming.
-   */
-  attack: { speed: number; duration: number; cooldown: number; missCooldown: number; icon: string };
+  /** Egg only: a short dash that defeats what it touches. Characters use `character.ability` instead. */
+  attack?: { speed: number; duration: number; cooldown: number; missCooldown: number; icon: string };
+  character?: CharacterConfig;
 }
 
 const EGG: FormConfig = {
@@ -30,27 +31,23 @@ const EGG: FormConfig = {
   attack: { speed: 480, duration: 260, cooldown: 500, missCooldown: 900, icon: '💥' },
 };
 
-/** Texture sizes for the placeholder reptiles (see BootScene). */
-const SPECIES_BODY: Record<Species, { w: number; h: number }> = {
-  lizard: { w: 110, h: 60 },
-  snake: { w: 120, h: 56 },
+/** Sprite scale per life stage (placeholder art is drawn at full size). */
+const STAGE_SCALE: Record<string, number> = {
+  hatchling: 0.62,
 };
 
-const HATCHLING: Omit<FormConfig, 'texture' | 'body'> = {
-  id: 'hatchling',
-  scale: 0.62,
-  speed: 250,
-  jumpVelocity: 560,
-  rolls: false,
-  // Quicker, snappier chomp than the egg's bonk.
-  attack: { speed: 580, duration: 190, cooldown: 350, missCooldown: 800, icon: '🦷' },
-};
-
-/** Resolve an episode's form for the reptile the kid chose. */
-export function getForm(formId: string, species: Species | null): FormConfig {
-  if (formId === 'hatchling') {
-    const s = species ?? 'lizard';
-    return { ...HATCHLING, texture: s, body: SPECIES_BODY[s] };
-  }
-  return EGG;
+/** Resolve an episode's form for the character the kid chose. */
+export function getForm(formId: string, characterId: CharacterId | null): FormConfig {
+  if (formId === 'egg') return EGG;
+  const ch = CHARACTERS[characterId ?? 'lizard'];
+  return {
+    id: formId,
+    texture: ch.texture,
+    scale: STAGE_SCALE[formId] ?? STAGE_SCALE.hatchling,
+    body: ch.body,
+    speed: ch.speed,
+    jumpVelocity: ch.jumpVelocity,
+    rolls: false,
+    character: ch,
+  };
 }
