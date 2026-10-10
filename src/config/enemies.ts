@@ -8,6 +8,8 @@ export interface EnemyConfig {
   boss?: boolean;
   /** Can't be stomped; must be bitten/bonked. */
   spiky?: boolean;
+  /** Boss only: sprite height in px (used by the arena rules in levelRules.ts). */
+  height?: number;
   /** Boss only: how long it stays dizzy (and hittable) after a charge. Shrinks on later bosses. */
   dizzyMs?: number;
   /** Emoji shown in the HUD for bosses (no reading needed). */
@@ -19,6 +21,7 @@ export const ENEMIES: Record<string, EnemyConfig> = {
   hedgehog: { id: 'hedgehog', texture: 'hedgehog', hp: 1, speed: 45, spiky: true },
   badger: {
     id: 'badger',
+    height: 90,
     texture: 'badger',
     hp: 3,
     speed: 80,
@@ -29,6 +32,7 @@ export const ENEMIES: Record<string, EnemyConfig> = {
   },
   fox: {
     id: 'fox',
+    height: 90,
     texture: 'fox',
     hp: 4,
     speed: 100,
@@ -39,6 +43,7 @@ export const ENEMIES: Record<string, EnemyConfig> = {
   },
   wolf: {
     id: 'wolf',
+    height: 90,
     texture: 'wolf',
     hp: 5,
     speed: 110,
@@ -49,6 +54,7 @@ export const ENEMIES: Record<string, EnemyConfig> = {
   },
   bear: {
     id: 'bear',
+    height: 124,
     texture: 'bear',
     hp: 6,
     speed: 90,

@@ -2,7 +2,14 @@ import Phaser from 'phaser';
 import type { EnemyConfig } from '../config/enemies';
 import { Sfx } from '../systems/Sfx';
 
-type BossState = 'walk' | 'telegraph' | 'charge' | 'recover';
+type BossState = 'walk' | 'telegraph' | 'charge' | 'recover' | 'pound';
+
+/** How long the boss may be wedged against a platform before it stops trying and ground-pounds. */
+const STUCK_LIMIT_MS = 1000;
+/** Wind-up before a pound lands (the boss rears and flashes yellow). */
+const POUND_WINDUP_MS = 800;
+/** Minimum time between pounds. */
+const POUND_COOLDOWN_MS = 5000;
 
 export class Enemy extends Phaser.Physics.Arcade.Sprite {
   readonly cfg: EnemyConfig;
@@ -21,6 +28,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private afraidUntil = 0;
   private knockUntil = 0;
   private lastTick = 0;
+  /** ms spent pushing against a non-level-edge obstacle (e.g. the edge of a low platform). */
+  private stuckMs = 0;
+  private poundQueued = false;
+  private poundReadyAt = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, cfg: EnemyConfig, patrol = 150) {
     super(scene, x, y, cfg.texture);
@@ -91,7 +102,14 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       case 'walk':
         this.dir = toPlayer;
         this.setVelocityX(this.dir * this.cfg.speed);
-        if (time > this.stateUntil) this.enter('telegraph', time, 700);
+        if (this.poundQueued && time >= this.poundReadyAt) {
+          this.poundQueued = false;
+          this.stuckMs = 0;
+          this.setVelocityY(-260); // rears up
+          this.enter('pound', time, POUND_WINDUP_MS);
+        } else if (time > this.stateUntil) {
+          this.enter('telegraph', time, 700);
+        }
         break;
       case 'telegraph':
         // Wind-up: stop, flash red so a 7-year-old can see the charge coming.
@@ -103,8 +121,28 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       case 'charge':
         this.clearTint();
         this.setVelocityX(this.dir * (this.cfg.chargeSpeed ?? 300));
-        if (time > this.stateUntil || body.blocked.left || body.blocked.right) {
+        if (this.hitLevelEdge(body)) {
+          // Slammed into the end of the level: that's a real crash, so it's dizzy.
           this.enter('recover', time, this.cfg.dizzyMs ?? 1400);
+        } else if (body.blocked.left || body.blocked.right || this.obstacleAhead(body)) {
+          // Bumped (or about to bump) a platform: no dizzy reward, just back off and try again.
+          this.setVelocityX(-this.dir * 140);
+          this.enter('walk', time, 1200);
+        } else if (time > this.stateUntil) {
+          // Ran its whole charge across open ground (the player dodged it): dizzy.
+          this.enter('recover', time, this.cfg.dizzyMs ?? 1400);
+        }
+        break;
+      case 'pound':
+        // Rear up and flash yellow, then slam: shockwaves run along the floor (see LevelScene).
+        this.setVelocityX(0);
+        this.setTint(Math.floor(time / 70) % 2 ? 0xffd54f : 0xffffff);
+        if (time > this.stateUntil) {
+          this.clearTint();
+          this.poundReadyAt = time + POUND_COOLDOWN_MS;
+          this.emit('pound', this.x, this.y + this.displayHeight / 2);
+          // Not dizzy afterwards: camping must never turn into a free-hit window.
+          this.enter('walk', time, 1800);
         }
         break;
       case 'recover':
@@ -116,8 +154,46 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         }
         break;
     }
+    this.trackStuck(body, dt);
     this.setFlipX(this.dir > 0);
     this.updateStatusFx();
+  }
+
+  /** A solid thing (platform) right in front of the boss, even if it hasn't touched it yet. */
+  private obstacleAhead(body: Phaser.Physics.Arcade.Body): boolean {
+    const x = this.dir > 0 ? body.right + 1 : body.left - 29;
+    // Sampled above the floor line, so the ground itself never counts.
+    return this.scene.physics.overlapRect(x, body.top + 4, 28, body.height - 14, false, true).length > 0;
+  }
+
+  /** Against the left/right end of the level (as opposed to a platform edge). */
+  private hitLevelEdge(body: Phaser.Physics.Arcade.Body): boolean {
+    const wb = this.scene.physics.world.bounds;
+    return (
+      (body.blocked.left || body.blocked.right) && (body.left <= wb.x + 2 || body.right >= wb.right - 2)
+    );
+  }
+
+  /**
+   * If the boss keeps getting wedged against something it can't pass (typically a player hiding
+   * under a low platform), it gives up walking and ground-pounds instead.
+   */
+  private trackStuck(body: Phaser.Physics.Arcade.Body, dt: number) {
+    const wedged =
+      (this.mode === 'walk' || this.mode === 'charge') &&
+      (body.blocked.left || body.blocked.right) &&
+      !this.hitLevelEdge(body);
+    // Only a boss that's moving freely clears the count; standing still in a wind-up keeps it, so
+    // the walk -> telegraph -> charge cycle can't reset it every time.
+    const movingFree = !body.blocked.left && !body.blocked.right && Math.abs(body.velocity.x) > 30;
+    if (wedged) this.stuckMs += dt;
+    else if (movingFree) this.stuckMs = Math.max(0, this.stuckMs - dt * 2);
+    if (this.stuckMs > STUCK_LIMIT_MS) this.requestPound();
+  }
+
+  /** Ask for a ground pound at the next safe moment (used by the level when someone is camping). */
+  requestPound() {
+    this.poundQueued = true;
   }
 
   /** Icon above the head: 💫 while a boss is hittable, 😨 while scared. Readable without text. */
@@ -174,6 +250,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setAlpha(1);
     this.afraidUntil = 0;
     this.knockUntil = 0;
+    this.stuckMs = 0;
+    this.poundQueued = false;
+    this.poundReadyAt = 0;
     this.respawn();
     this.updateStatusFx();
   }

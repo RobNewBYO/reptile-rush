@@ -1,5 +1,5 @@
 export type CharacterId = 'lizard' | 'snake' | 'turtle' | 'toad' | 'axolotl' | 'frog';
-export type AbilityKind = 'venom' | 'scare' | 'water' | 'slam' | 'thunder' | 'tongue';
+export type AbilityKind = 'venom' | 'scare' | 'water' | 'spike' | 'slam' | 'thunder' | 'tongue';
 
 export interface Ability {
   kind: AbilityKind;
@@ -7,7 +7,7 @@ export interface Ability {
   icon: string;
   /** ms before it can be used again. */
   cooldown: number;
-  /** Projectile speed (venom, water). */
+  /** Projectile speed (venom, water, spike). */
   speed?: number;
   /** Projectile / tongue reach in px. */
   range?: number;
@@ -17,6 +17,8 @@ export interface Ability {
   duration?: number;
   /** Push-back speed on a hit (water). */
   knockback?: number;
+  /** Hit points removed per hit; defaults to 1. */
+  damage?: number;
 }
 
 export interface CharacterConfig {
@@ -41,7 +43,7 @@ export interface CharacterConfig {
 /**
  * Every character keeps the stomp-bounce; `ability` is what the action button does.
  * Strengths are paid for with a weakness so no character is simply best.
- * Ranged / area abilities (venom, water, thunder, tongue, scare) are safe against spiky mammals;
+ * Ranged / area abilities (venom, water, spike, thunder, tongue) are safe against spiky mammals;
  * only stomping a spiky mammal hurts.
  */
 export const CHARACTERS: Record<CharacterId, CharacterConfig> = {
@@ -55,9 +57,9 @@ export const CHARACTERS: Record<CharacterId, CharacterConfig> = {
     jumpVelocity: 540,
     doubleJump: false,
     stompDamage: 1,
-    ability: { kind: 'scare', icon: '😠', cooldown: 2400, radius: 300, duration: 2600 },
-    strength: 'Mean look: scared mammals freeze and cannot hurt you. Fast.',
-    weakness: 'The look does no damage, so you still have to stomp them.',
+    ability: { kind: 'spike', icon: '🌵', cooldown: 900, speed: 520, range: 220, damage: 2 },
+    strength: 'Spike shot: hits twice as hard as the water gun, and is safe against spiky mammals. Fast.',
+    weakness: 'Short range and a slower reload, so you have to get close.',
   },
   snake: {
     id: 'snake',

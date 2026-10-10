@@ -6,12 +6,15 @@ import type { LevelConfig } from '../config/levels';
 import { Enemy } from '../entities/Enemy';
 import { Controls } from '../systems/Controls';
 import { Save } from '../systems/Save';
+import { arenaStartX, findHidingSpots } from '../systems/levelRules';
 import { Sfx } from '../systems/Sfx';
 import { addMuteButton } from './ui';
 
 const EGG_HEARTS = 3;
 const BOSS_BAR_W = 220;
 const STOMP_BOUNCE = -380;
+/** Default trampoline launch speed: apex about 300px up, enough to clear every arena platform. */
+const TRAMPOLINE_POWER = 860;
 
 export class LevelScene extends Phaser.Scene {
   private controls!: Controls;
@@ -20,6 +23,8 @@ export class LevelScene extends Phaser.Scene {
   private level!: LevelConfig;
   private enemies!: Phaser.Physics.Arcade.Group;
   private shots!: Phaser.Physics.Arcade.Group;
+  private waves!: Phaser.Physics.Arcade.Group;
+  private padReadyAt = 0;
   private boss!: Enemy;
 
   private maxHearts = EGG_HEARTS;
@@ -41,6 +46,9 @@ export class LevelScene extends Phaser.Scene {
   private prevJump = false;
   private slamming = false;
   private slamStart = 0;
+  /** ms the player has been standing on a platform while the boss is awake. */
+  private campMs = 0;
+  private lastUpdate = 0;
 
   private bossBarBg!: Phaser.GameObjects.Rectangle;
   private bossBar!: Phaser.GameObjects.Rectangle;
@@ -65,6 +73,9 @@ export class LevelScene extends Phaser.Scene {
     this.jumpsLeft = 0;
     this.prevJump = false;
     this.slamming = false;
+    this.campMs = 0;
+    this.lastUpdate = 0;
+    this.padReadyAt = 0;
     this.heartIcons = [];
     this.badge = undefined;
   }
@@ -104,6 +115,25 @@ export class LevelScene extends Phaser.Scene {
       this.onShotHit(s as Phaser.Physics.Arcade.Sprite, e as unknown as Enemy),
     );
     this.physics.add.collider(this.shots, solids, (s) => (s as Phaser.GameObjects.GameObject).destroy());
+
+    // Trampolines: walk onto one for a big assisted jump.
+    const pads = this.physics.add.staticGroup();
+    for (const t of this.level.trampolines ?? []) {
+      const pad = pads.create(t.x, LevelScene.FLOOR_TOP - 14, 'trampoline') as Phaser.Physics.Arcade.Sprite;
+      pad.setDepth(5).setData('power', t.power ?? TRAMPOLINE_POWER).refreshBody();
+    }
+    this.physics.add.overlap(this.player, pads, (_p, pad) => this.onPad(pad as Phaser.Physics.Arcade.Sprite));
+
+    // Boss ground-pound shockwaves: run along the floor, jump over them.
+    this.waves = this.physics.add.group({ allowGravity: false });
+    this.physics.add.overlap(this.player, this.waves, (_p, w) => this.onWaveHit(w as Phaser.GameObjects.GameObject));
+    this.boss.on('pound', (x: number, floorY: number) => this.onBossPound(x, floorY));
+
+    // Dev-time guard: warn if a level reintroduces a platform the boss can't walk under.
+    if (import.meta.env.DEV) {
+      const bad = findHidingSpots(this.level, this.boss.displayHeight);
+      if (bad.length) console.warn(`[${this.level.id}] boss arena hiding spots:`, bad);
+    }
 
     this.cameras.main.setBounds(0, 0, width, height);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
@@ -331,10 +361,7 @@ export class LevelScene extends Phaser.Scene {
         return;
       }
       icon.destroy();
-      this.boss.resetFight();
-      this.bossBarBg.setVisible(false);
-      this.bossBar.setVisible(false);
-      this.bossIcon.setVisible(false);
+      this.resetBossFight();
       this.hearts = this.maxHearts;
       this.refreshHearts();
       // Just outside the arena, so the player walks in and wakes the boss on their own terms.
@@ -349,6 +376,14 @@ export class LevelScene extends Phaser.Scene {
       this.dying = false;
       this.cameras.main.fadeIn(300);
     });
+  }
+
+  /** Boss back to full health, asleep at its spawn; its bar hidden until it wakes again. */
+  private resetBossFight() {
+    this.boss.resetFight();
+    this.bossBarBg.setVisible(false);
+    this.bossBar.setVisible(false);
+    this.bossIcon.setVisible(false);
   }
 
   private refreshHearts() {
@@ -369,6 +404,60 @@ export class LevelScene extends Phaser.Scene {
     );
   }
 
+  // ------------------------------------------------------------ trampolines
+
+  private onPad(pad: Phaser.Physics.Arcade.Sprite) {
+    const now = this.time.now;
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    if (now < this.padReadyAt || this.finished || this.dying || body.velocity.y < -50) return;
+    this.padReadyAt = now + 350;
+    this.player.setVelocityY(-((pad.getData('power') as number) ?? TRAMPOLINE_POWER));
+    this.slamming = false;
+    // A frog may still double-jump at the top of the bounce.
+    this.jumpsLeft = this.form.character?.doubleJump ? 1 : 0;
+    Sfx.play('boing');
+    this.tweens.add({
+      targets: pad,
+      scaleY: 0.45,
+      duration: 90,
+      yoyo: true,
+      ease: 'Quad.Out',
+    });
+  }
+
+  // ------------------------------------------------------ boss ground pound
+
+  private static readonly FLOOR_TOP = 476;
+
+  /** The boss slams down: a wave runs each way along the floor, and anyone perched on a platform is shaken off. */
+  private onBossPound(x: number, floorY: number) {
+    if (this.dying || this.finished) return;
+    Sfx.play('slam');
+    this.cameras.main.shake(260, 0.012);
+    for (const dir of [-1, 1]) {
+      const wave = this.waves.create(x + dir * 70, floorY - 16, 'shot') as Phaser.Physics.Arcade.Sprite;
+      wave.setTint(0xffb74d).setScale(2.2, 1.9).setDepth(40);
+      (wave.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+      wave.setVelocityX(dir * 360);
+      this.time.delayedCall(1700, () => wave.active && wave.destroy());
+    }
+    // Perched on a platform to avoid the boss? The quake knocks you off, towards the floor.
+    const pBody = this.player.body as Phaser.Physics.Arcade.Body;
+    if (pBody.blocked.down && pBody.bottom < LevelScene.FLOOR_TOP - 30) {
+      this.player.setVelocity(Math.sign(this.player.x - x || 1) * 240, -220);
+      this.invulnUntil = Math.max(this.invulnUntil, this.time.now + 900);
+    }
+  }
+
+  private onWaveHit(wave: Phaser.GameObjects.GameObject) {
+    if (!wave.active || this.dying || this.finished) return;
+    const pBody = this.player.body as Phaser.Physics.Arcade.Body;
+    // Jump it: a player whose feet are off the floor passes over.
+    if (pBody.bottom < LevelScene.FLOOR_TOP - 28) return;
+    if (this.time.now < this.invulnUntil) return;
+    this.hurt((wave as Phaser.Physics.Arcade.Sprite).x);
+  }
+
   // -------------------------------------------------------------- abilities
 
   private useAbility(time: number) {
@@ -387,6 +476,7 @@ export class LevelScene extends Phaser.Scene {
     switch (a.kind) {
       case 'venom':
       case 'water':
+      case 'spike':
         return this.fireShot(a);
       case 'scare':
         return this.scareNearby(a, time);
@@ -414,18 +504,24 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
-  /** Snake venom / turtle water gun. */
+  /** Snake venom / turtle water gun / lizard spike. */
   private fireShot(a: Ability) {
+    const spike = a.kind === 'spike';
     const venom = a.kind === 'venom';
-    Sfx.play(venom ? 'venom' : 'water');
+    Sfx.play(spike ? 'spike' : venom ? 'venom' : 'water');
     const shot = this.shots.create(
       this.player.x + this.facing * 40,
       this.player.y - 4,
-      'shot',
+      spike ? 'spike' : 'shot',
     ) as Phaser.Physics.Arcade.Sprite;
-    shot.setTint(venom ? 0x76ff03 : 0x4fc3f7).setScale(venom ? 1.1 : 0.8).setDepth(40);
+    if (spike) {
+      shot.setFlipX(this.facing < 0).setDepth(40);
+    } else {
+      shot.setTint(venom ? 0x76ff03 : 0x4fc3f7).setScale(venom ? 1.1 : 0.8).setDepth(40);
+    }
     shot.setData('kind', a.kind);
     shot.setData('knockback', a.knockback ?? 0);
+    shot.setData('damage', a.damage ?? 1);
     (shot.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
     shot.setVelocityX(this.facing * (a.speed ?? 500));
     this.time.delayedCall(((a.range ?? 300) / (a.speed ?? 500)) * 1000, () => shot.active && shot.destroy());
@@ -436,8 +532,9 @@ export class LevelScene extends Phaser.Scene {
     const now = this.time.now;
     const dir = Math.sign(shot.body!.velocity.x) || 1;
     const kb = (shot.getData('knockback') as number) ?? 0;
+    const damage = (shot.getData('damage') as number) ?? 1;
     shot.destroy();
-    if (this.zapEnemy(enemy, now) || enemy.defeated) return;
+    if (this.zapEnemy(enemy, now, damage) || enemy.defeated) return;
     if (kb > 0) enemy.knock(now, 260, dir * kb);
   }
 
@@ -581,6 +678,16 @@ export class LevelScene extends Phaser.Scene {
     }
     this.prevJump = c.jump;
 
+    // Anti-camping: standing on a platform for a few seconds during the fight makes the boss quake.
+    const dt = this.lastUpdate ? time - this.lastUpdate : 0;
+    this.lastUpdate = time;
+    const perched = body.blocked.down && body.bottom < LevelScene.FLOOR_TOP - 30;
+    this.campMs = this.boss.awake && !this.boss.defeated && perched ? this.campMs + dt : 0;
+    if (this.campMs > 3000) {
+      this.campMs = 0;
+      this.boss.requestPound();
+    }
+
     this.player.setFlipX(!this.form.rolls && this.facing < 0);
 
     // Blink while invulnerable.
@@ -589,6 +696,11 @@ export class LevelScene extends Phaser.Scene {
     if (this.form.rolls) this.player.angle += body.velocity.x * 0.02;
 
     this.controls.actionReady = time >= this.actionReadyAt;
+
+    // Leaving the arena ends the fight: the boss can't be lured out and the fight starts fresh.
+    if (this.boss.awake && !this.boss.defeated && this.player.x < arenaStartX(this.level)) {
+      this.resetBossFight();
+    }
 
     // Boss wakes when the player gets close.
     if (!this.boss.awake && this.player.x > this.level.boss.wakeX) {

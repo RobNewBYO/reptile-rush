@@ -1,9 +1,9 @@
 import { Save } from './Save';
 
 export type SfxName =
-  | 'jump' | 'doubleJump' | 'stomp' | 'bite' | 'venom' | 'water' | 'scare' | 'zap' | 'slam'
+  | 'jump' | 'doubleJump' | 'stomp' | 'bite' | 'venom' | 'spike' | 'water' | 'scare' | 'zap' | 'slam'
   | 'tongue' | 'squeak' | 'star' | 'hurt' | 'clink' | 'telegraph' | 'dizzy' | 'bossDefeat'
-  | 'complete' | 'lose' | 'ui' | 'crack' | 'switch';
+  | 'complete' | 'lose' | 'ui' | 'crack' | 'switch' | 'boing';
 
 interface ToneOpts {
   type?: OscillatorType;
@@ -116,6 +116,10 @@ class Engine {
       this.tone(180, 0.1, { to: 90 });
     },
     venom: () => this.tone(780, 0.28, { type: 'sawtooth', to: 220, vol: 0.1 }),
+    spike: () => {
+      this.tone(1300, 0.09, { type: 'sawtooth', to: 420, vol: 0.13 });
+      this.noise(0.05, { vol: 0.09, hp: 3000 });
+    },
     water: () => {
       this.tone(700, 0.08, { type: 'triangle', to: 1100, vol: 0.12 });
       this.noise(0.1, { vol: 0.06, hp: 2500 });
@@ -167,6 +171,10 @@ class Engine {
     crack: () => {
       this.noise(0.04, { vol: 0.14, hp: 1200 });
       this.noise(0.04, { vol: 0.12, hp: 1800, at: 0.07 });
+    },
+    boing: () => {
+      this.tone(180, 0.32, { type: 'sine', to: 760, vol: 0.2 });
+      this.tone(320, 0.22, { type: 'triangle', to: 900, vol: 0.1, at: 0.06 });
     },
     switch: () => {
       this.tone(500, 0.08, { type: 'sine', vol: 0.12 });

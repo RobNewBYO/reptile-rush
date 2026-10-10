@@ -163,6 +163,23 @@ export class BootScene extends Phaser.Scene {
     g.generateTexture('frog', 140, 92);
     g.clear();
 
+    // Trampoline pad: red top, springs, base
+    g.fillStyle(0x455a64).fillRoundedRect(8, 22, 80, 6, 3);
+    g.lineStyle(4, 0xcfd8dc);
+    for (let i = 0; i < 5; i++) g.lineBetween(14 + i * 17, 22, 22 + i * 17, 12);
+    for (let i = 0; i < 5; i++) g.lineBetween(22 + i * 17, 12, 30 + i * 17, 22);
+    g.fillStyle(0xe53935).fillRoundedRect(0, 0, 96, 12, 6);
+    g.fillStyle(0xffcdd2).fillRoundedRect(6, 2, 84, 3, 2);
+    g.generateTexture('trampoline', 96, 28);
+    g.clear();
+
+    // Spike (lizard's shot): a pointed thorn facing right
+    g.fillStyle(0x8d6e63).fillTriangle(0, 3, 0, 21, 14, 12);
+    g.fillStyle(0xffb300).fillTriangle(8, 0, 8, 24, 34, 12);
+    g.fillStyle(0xfff3c4).fillTriangle(12, 8, 12, 12, 30, 12);
+    g.generateTexture('spike', 36, 24);
+    g.clear();
+
     // Projectile (tinted per ability)
     g.fillStyle(0xffffff).fillCircle(10, 10, 10);
     g.generateTexture('shot', 20, 20);
