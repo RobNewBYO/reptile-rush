@@ -1,4 +1,5 @@
 import { CHARACTERS, type CharacterConfig, type CharacterId } from './characters';
+import { applyUpgrades, type UpgradeLevels } from './upgrades';
 
 /**
  * A "form" is the life stage an episode uses (egg, hatchling, ...).
@@ -37,9 +38,13 @@ const STAGE_SCALE: Record<string, number> = {
 };
 
 /** Resolve an episode's form for the character the kid chose. */
-export function getForm(formId: string, characterId: CharacterId | null): FormConfig {
+export function getForm(
+  formId: string,
+  characterId: CharacterId | null,
+  upgrades?: UpgradeLevels,
+): FormConfig {
   if (formId === 'egg') return EGG;
-  const ch = CHARACTERS[characterId ?? 'lizard'];
+  const ch = applyUpgrades(CHARACTERS[characterId ?? 'lizard'], upgrades);
   return {
     id: formId,
     texture: ch.texture,

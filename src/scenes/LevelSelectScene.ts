@@ -17,9 +17,38 @@ export class LevelSelectScene extends Phaser.Scene {
 
     addMuteButton(this, width - 48, 48);
 
+    const { height } = this.scale;
+    this.add
+      .text(24, 32, `🐛 ${Save.bank}`, { fontSize: '34px', color: '#fff8e1', stroke: '#1d3b2a', strokeThickness: 6 })
+      .setOrigin(0, 0.5);
+
+    // Start over (small and out of the way; the next screen needs a deliberate hold).
+    const reset = this.add
+      .circle(48, height - 48, 30, 0x000000, 0.35)
+      .setInteractive({ useHandCursor: true });
+    this.add.text(48, height - 48, '🗑️', { fontSize: '30px' }).setOrigin(0.5).setAlpha(0.8);
+    reset.on('pointerdown', () => {
+      Sfx.play('ui');
+      this.scene.start('Reset');
+    });
+
+    // Spend bugs on upgrades once an animal has hatched.
+    if (Save.character) {
+      const ready = Save.canAffordUpgrade();
+      const up = this.add
+        .circle(width - 190, height - 70, 52, ready ? 0xfff176 : 0xffffff, 0.92)
+        .setStrokeStyle(6, ready ? 0xffa000 : 0xffd54f)
+        .setInteractive({ useHandCursor: true });
+      this.add.text(width - 190, height - 70, '⬆️', { fontSize: '56px' }).setOrigin(0.5);
+      if (ready) this.tweens.add({ targets: up, scale: 1.12, duration: 500, yoyo: true, repeat: -1 });
+      up.on('pointerdown', () => {
+        Sfx.play('ui');
+        this.scene.start('Upgrade', { returnTo: 'LevelSelect' });
+      });
+    }
+
     // Change character any time once hatched.
     if (Save.character) {
-      const { height } = this.scale;
       const swap = this.add
         .circle(width - 70, height - 70, 52, 0xffffff, 0.92)
         .setStrokeStyle(6, 0xffd54f)
@@ -67,6 +96,14 @@ export class LevelSelectScene extends Phaser.Scene {
             fontStyle: 'bold',
           })
           .setOrigin(0.5);
+
+        // Bugs found in this level, out of what's there.
+        const total = ((this.cache.json.get(id)?.collectibles ?? []) as unknown[]).length;
+        if (open && total) {
+          this.add
+            .text(x, y + 76, `🐛 ${Save.levelBugs(id).count}/${total}`, { fontSize: '20px', color: '#fff8e1' })
+            .setOrigin(0.5);
+        }
 
         const stars = Save.starsFor(id);
         for (let s = 0; s < 3; s++) {

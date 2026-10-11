@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { CHARACTERS, CHARACTER_IDS } from '../config/characters';
+import { applyUpgrades } from '../config/upgrades';
 import { Save } from '../systems/Save';
 import { Sfx } from '../systems/Sfx';
 
@@ -44,7 +45,7 @@ export class CharacterScene extends Phaser.Scene {
     const current = Save.character;
 
     CHARACTER_IDS.forEach((id, i) => {
-      const ch = CHARACTERS[id];
+      const ch = applyUpgrades(CHARACTERS[id], Save.upgradesFor(id));
       const x = left + (i % cols) * (cardW + gap);
       const y = top + Math.floor(i / cols) * (cardH + 16);
       const selected = id === current;
@@ -59,9 +60,15 @@ export class CharacterScene extends Phaser.Scene {
       this.tweens.add({ targets: pic, y: pic.y - 6, duration: 600 + i * 70, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
 
       // Hearts = toughness; ability icon = what the action button does.
-      const hs = 21;
-      const hx = x - ((ch.maxHearts - 1) * hs) / 2;
-      for (let h = 0; h < ch.maxHearts; h++) this.add.image(hx + h * hs, y + 26, 'heart').setScale(0.62);
+      if (ch.maxHearts <= 6) {
+        const hs = 21;
+        const hx = x - ((ch.maxHearts - 1) * hs) / 2;
+        for (let h = 0; h < ch.maxHearts; h++) this.add.image(hx + h * hs, y + 26, 'heart').setScale(0.62);
+      } else {
+        // Upgraded animals can have lots of hearts: show one heart and the count.
+        this.add.image(x - 22, y + 26, 'heart').setScale(0.62);
+        this.add.text(x - 6, y + 26, `×${ch.maxHearts}`, { fontSize: '22px', color: '#c62828', fontStyle: 'bold' }).setOrigin(0, 0.5);
+      }
       this.add.text(x, y + 62, ch.ability.icon, { fontSize: '40px' }).setOrigin(0.5);
       if (ch.doubleJump) this.add.text(x + cardW / 2 - 26, y - cardH / 2 + 26, '⏫', { fontSize: '30px' }).setOrigin(0.5);
       this.add

@@ -42,6 +42,18 @@ export class ResultsScene extends Phaser.Scene {
       });
     }
 
+    // Bugs gathered in this level (of those available), and the bank.
+    const total = (this.cache.json.get(levelId)?.collectibles ?? []) as { type: string }[];
+    const got = Save.levelBugs(levelId);
+    this.add
+      .text(width / 2, 360, `🐛 ${got.count}/${total.length}     bank 🐛 ${Save.bank}`, {
+        fontSize: '38px',
+        color: '#fff8e1',
+        stroke: '#1d3b2a',
+        strokeThickness: 6,
+      })
+      .setOrigin(0.5);
+
     addMuteButton(this, width - 48, 48);
     const ep = episodeOf(levelId);
     const idx = ep.levels.indexOf(levelId);
@@ -55,11 +67,20 @@ export class ResultsScene extends Phaser.Scene {
       }
     };
 
-    const y = 440;
-    roundButton(this, width / 2 - 100, y, 52, '↻', () =>
+    const y = 450;
+    // Upgrades are for the animals, so they open up once the egg has hatched.
+    const canUpgrade = Save.character && Save.canAffordUpgrade();
+    const gap = canUpgrade ? 130 : 100;
+    roundButton(this, width / 2 - gap, y, 52, '↻', () =>
       this.scene.start('Level', { levelId, formId }),
     );
-    const go = roundButton(this, width / 2 + 100, y, 52, '▶', next);
+    if (canUpgrade) {
+      const up = roundButton(this, width / 2, y, 52, '⬆️', () =>
+        this.scene.start('Upgrade', { returnTo: 'LevelSelect' }),
+      );
+      this.tweens.add({ targets: up, scale: 1.12, duration: 500, yoyo: true, repeat: -1 });
+    }
+    const go = roundButton(this, width / 2 + gap, y, 52, '▶', next);
     this.tweens.add({ targets: go, scale: 1.1, duration: 600, yoyo: true, repeat: -1 });
     this.input.keyboard?.once('keydown-SPACE', next);
   }

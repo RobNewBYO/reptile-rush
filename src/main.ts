@@ -6,6 +6,8 @@ import { LevelSelectScene } from './scenes/LevelSelectScene';
 import { ResultsScene } from './scenes/ResultsScene';
 import { TitleScene } from './scenes/TitleScene';
 import { CharacterScene } from './scenes/CharacterScene';
+import { ResetScene } from './scenes/ResetScene';
+import { UpgradeScene } from './scenes/UpgradeScene';
 import { Save } from './systems/Save';
 import { Sfx, installAudioUnlock } from './systems/Sfx';
 import { GAME_HEIGHT, computeGameWidth, isLandscape } from './systems/viewport';
@@ -28,7 +30,7 @@ const game = new Phaser.Game({
     arcade: { gravity: { x: 0, y: 1200 }, debug: false },
   },
   input: { activePointers: 3 },
-  scene: [BootScene, TitleScene, LevelSelectScene, LevelScene, ResultsScene, HatchScene, CharacterScene],
+  scene: [BootScene, TitleScene, LevelSelectScene, LevelScene, ResultsScene, HatchScene, CharacterScene, UpgradeScene, ResetScene],
 });
 
 // Opened in portrait, then rotated: the canvas was sized for the wrong aspect, so rebuild it once.

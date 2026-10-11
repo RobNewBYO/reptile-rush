@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { Save } from '../systems/Save';
 import { Sfx } from '../systems/Sfx';
 
 /** Shown once, after finishing Episode 1: the egg hatches, then the kid picks their character. */
@@ -25,7 +26,12 @@ export class HatchScene extends Phaser.Scene {
         egg.destroy();
         this.add.text(width / 2, height / 2, '🐣', { fontSize: '160px' }).setOrigin(0.5);
         this.time.delayedCall(900, () =>
-          this.scene.start('Characters', { overlay: false, returnTo: 'LevelSelect', canClose: false }),
+          // Bugs gathered as an egg can be spent the moment the animal is chosen.
+          this.scene.start('Characters', {
+            overlay: false,
+            returnTo: Save.canAffordUpgrade() ? 'Upgrade' : 'LevelSelect',
+            canClose: false,
+          }),
         );
       },
     });

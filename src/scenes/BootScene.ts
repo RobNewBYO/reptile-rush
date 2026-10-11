@@ -173,6 +173,24 @@ export class BootScene extends Phaser.Scene {
     g.generateTexture('trampoline', 96, 28);
     g.clear();
 
+    // Bug: a little red beetle with spots (collectible, worth 1)
+    g.fillStyle(0x000000).fillCircle(20, 7, 5);
+    g.lineStyle(2, 0x000000).lineBetween(8, 6, 12, 12).lineBetween(32, 6, 28, 12);
+    g.fillStyle(0xe53935).fillEllipse(20, 18, 24, 20);
+    g.lineStyle(2, 0x000000).lineBetween(20, 8, 20, 27);
+    g.fillStyle(0x000000).fillCircle(14, 15, 2.5).fillCircle(26, 15, 2.5).fillCircle(15, 22, 2).fillCircle(25, 22, 2);
+    g.generateTexture('bug', 40, 30);
+    g.clear();
+
+    // Grub: a fat cream larva (collectible, worth 3)
+    g.fillStyle(0xfff3c4);
+    g.fillEllipse(10, 22, 18, 16).fillEllipse(22, 20, 20, 20).fillEllipse(35, 18, 20, 22).fillEllipse(48, 17, 22, 24);
+    g.lineStyle(2, 0xd7c27a).lineBetween(16, 14, 16, 30).lineBetween(28, 11, 28, 30).lineBetween(41, 8, 41, 28);
+    g.fillStyle(0xffe082).fillCircle(54, 12, 7);
+    g.fillStyle(0x000000).fillCircle(56, 10, 2.5);
+    g.generateTexture('grub', 64, 40);
+    g.clear();
+
     // Spike (lizard's shot): a pointed thorn facing right
     g.fillStyle(0x8d6e63).fillTriangle(0, 3, 0, 21, 14, 12);
     g.fillStyle(0xffb300).fillTriangle(8, 0, 8, 24, 34, 12);

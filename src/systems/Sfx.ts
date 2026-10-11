@@ -3,7 +3,7 @@ import { Save } from './Save';
 export type SfxName =
   | 'jump' | 'doubleJump' | 'stomp' | 'bite' | 'venom' | 'spike' | 'water' | 'scare' | 'zap' | 'slam'
   | 'tongue' | 'squeak' | 'star' | 'hurt' | 'clink' | 'telegraph' | 'dizzy' | 'bossDefeat'
-  | 'complete' | 'lose' | 'ui' | 'crack' | 'switch' | 'boing';
+  | 'complete' | 'lose' | 'ui' | 'crack' | 'switch' | 'boing' | 'bug' | 'grub' | 'upgrade';
 
 interface ToneOpts {
   type?: OscillatorType;
@@ -171,6 +171,14 @@ class Engine {
     crack: () => {
       this.noise(0.04, { vol: 0.14, hp: 1200 });
       this.noise(0.04, { vol: 0.12, hp: 1800, at: 0.07 });
+    },
+    bug: () => this.tone(988, 0.09, { type: 'sine', to: 1480, vol: 0.12 }),
+    grub: () => {
+      this.tone(660, 0.1, { type: 'triangle', vol: 0.14 });
+      this.tone(990, 0.14, { type: 'triangle', vol: 0.14, at: 0.08 });
+    },
+    upgrade: () => {
+      [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone(f, 0.16, { type: 'triangle', at: i * 0.09, vol: 0.15 }));
     },
     boing: () => {
       this.tone(180, 0.32, { type: 'sine', to: 760, vol: 0.2 });

@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { ENEMIES } from '../src/config/enemies.ts';
 import {
   clearanceUnder,
+  findBadCollectibles,
   findBlockedTrampolines,
   findHidingSpots,
   findUnreachablePlatforms,
@@ -30,10 +31,19 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
     console.error(`${file}: platform x=${p.x} y=${p.y} is too high to jump onto and has no trampoline beside it`);
     bad++;
   }
+  for (const msg of findBadCollectibles(level)) {
+    console.error(`${file}: collectible ${msg}`);
+    bad++;
+  }
+  const pts = (level.collectibles ?? []).reduce(
+    (n: number, c: { type: string }) => n + (c.type === 'grub' ? 3 : 1),
+    0,
+  );
+  console.log(`${file}: ${(level.collectibles ?? []).length} collectibles, ${pts} points`);
   for (const t of findBlockedTrampolines(level)) {
     console.error(`${file}: trampoline x=${t.x} is under (or too close to) a platform, so the bounce would hit it`);
     bad++;
   }
 }
 if (bad) process.exit(1);
-console.log('All boss arenas pass (no hiding spots, every high platform has a clear trampoline).');
+console.log('All boss arenas pass (no hiding spots, every high platform has a clear trampoline, collectibles in open air).');

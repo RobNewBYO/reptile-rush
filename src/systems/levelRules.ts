@@ -24,6 +24,7 @@ export interface LevelLike {
   platforms: PlatformLike[];
   boss: { wakeX: number };
   trampolines?: { x: number }[];
+  collectibles?: { id: string; type: string; x: number; y: number }[];
 }
 
 /** The lowest normal jump (snake): platforms higher than this need a trampoline. */
@@ -74,4 +75,20 @@ export function findBlockedTrampolines(level: LevelLike): { x: number }[] {
         Math.abs(t.x - p.x) < p.w / 2 + TRAMPOLINE_HALF_WIDTH + TRAMPOLINE_EDGE_GAP,
     ),
   );
+}
+
+/** Collectibles buried in a platform or the ground, or sharing an id (which would break saves). */
+export function findBadCollectibles(level: LevelLike): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const c of level.collectibles ?? []) {
+    if (seen.has(c.id)) problems.push(`${c.id}: duplicate id`);
+    seen.add(c.id);
+    if (c.y > FLOOR_TOP - 20) problems.push(`${c.id}: inside the ground (y=${c.y})`);
+    const inside = level.platforms.find(
+      (p) => Math.abs(c.x - p.x) < p.w / 2 + 16 && Math.abs(c.y - p.y) < PLATFORM_THICKNESS / 2 + 18,
+    );
+    if (inside) problems.push(`${c.id}: inside platform x=${inside.x} (at ${c.x},${c.y})`);
+  }
+  return problems;
 }

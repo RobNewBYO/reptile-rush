@@ -25,6 +25,8 @@ export class LevelScene extends Phaser.Scene {
   private shots!: Phaser.Physics.Arcade.Group;
   private waves!: Phaser.Physics.Arcade.Group;
   private padReadyAt = 0;
+  private pickups!: Phaser.Physics.Arcade.Group;
+  private bugText!: Phaser.GameObjects.Text;
   private boss!: Enemy;
 
   private maxHearts = EGG_HEARTS;
@@ -61,7 +63,7 @@ export class LevelScene extends Phaser.Scene {
 
   init(data: { levelId: string; formId: string; hurt?: number }) {
     this.level = this.cache.json.get(data.levelId) as LevelConfig;
-    this.form = getForm(data.formId, Save.character);
+    this.form = this.currentForm(data.formId);
     this.maxHearts = this.form.character?.maxHearts ?? EGG_HEARTS;
     this.hearts = this.maxHearts;
     // Hurts carry across level restarts, so a restart shows up in the final stars.
@@ -124,6 +126,26 @@ export class LevelScene extends Phaser.Scene {
     }
     this.physics.add.overlap(this.player, pads, (_p, pad) => this.onPad(pad as Phaser.Physics.Arcade.Sprite));
 
+    // Collectibles (bugs 1 point, grubs 3). Ones already collected in an earlier run don't come back.
+    this.pickups = this.physics.add.group({ allowGravity: false, immovable: true });
+    for (const c of this.level.collectibles ?? []) {
+      if (Save.isCollected(this.level.id, c.id)) continue;
+      const item = this.pickups.create(c.x, c.y, c.type) as Phaser.Physics.Arcade.Sprite;
+      item.setDepth(8).setData('id', c.id).setData('value', c.type === 'grub' ? 3 : 1);
+      (item.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+      this.tweens.add({
+        targets: item,
+        y: c.y - 8,
+        duration: 700 + (c.x % 5) * 60,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.InOut',
+      });
+    }
+    this.physics.add.overlap(this.player, this.pickups, (_p, it) =>
+      this.collect(it as Phaser.Physics.Arcade.Sprite),
+    );
+
     // Boss ground-pound shockwaves: run along the floor, jump over them.
     this.waves = this.physics.add.group({ allowGravity: false });
     this.physics.add.overlap(this.player, this.waves, (_p, w) => this.onWaveHit(w as Phaser.GameObjects.GameObject));
@@ -158,6 +180,12 @@ export class LevelScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off(Phaser.Scenes.Events.RESUME, onResume));
   }
 
+  /** The form for the chosen character, with that animal's upgrades applied. */
+  private currentForm(formId: string): FormConfig {
+    const c = Save.character;
+    return getForm(formId, c, c ? Save.upgradesFor(c) : undefined);
+  }
+
   private actionIcon(): string {
     return this.form.character?.ability.icon ?? this.form.attack?.icon ?? '💥';
   }
@@ -174,12 +202,33 @@ export class LevelScene extends Phaser.Scene {
   private buildHud() {
     this.heartIcons.forEach((h) => h.destroy());
     this.heartIcons = [];
-    for (let i = 0; i < this.maxHearts; i++) {
+    // Upgrades can add up to 10 hearts: past 8 they wrap onto a second row, kept clear of the boss bar.
+    const n = this.maxHearts;
+    const rows = n > 8 ? 2 : 1;
+    const perRow = Math.ceil(n / rows);
+    const spacing = Math.min(44, 230 / perRow);
+    const scale = rows === 2 ? 0.8 : Math.max(0.85, 1.2 * (spacing / 44));
+    for (let i = 0; i < n; i++) {
+      const row = Math.floor(i / perRow);
       this.heartIcons.push(
-        this.add.image(36 + i * 44, 34, 'heart').setScrollFactor(0).setDepth(100).setScale(1.2),
+        this.add
+          .image(36 + (i % perRow) * spacing, 30 + row * 32, 'heart')
+          .setScrollFactor(0)
+          .setDepth(100)
+          .setScale(scale),
       );
     }
     this.refreshHearts();
+    // The badge and bug counter sit below the hearts, so drop them when there are two rows.
+    const below = rows === 2 ? 20 : 0;
+
+    this.bugText?.destroy();
+    this.bugText = this.add
+      .text(100, 112 + below, '', { fontSize: '34px', color: '#fff8e1', stroke: '#1d3b2a', strokeThickness: 6 })
+      .setScrollFactor(0)
+      .setDepth(100)
+      .setOrigin(0, 0.5);
+    this.refreshBugCounter();
 
     // Boss bar sits to the left of the mute/home buttons so it never collides with the hearts.
     const barRight = this.scale.width - 190;
@@ -205,14 +254,14 @@ export class LevelScene extends Phaser.Scene {
     // Character badge: tap to switch character at any time (egg has no choice).
     if (this.form.character) {
       const bg = this.add
-        .circle(48, 112, 40, 0x000000, 0.4)
+        .circle(48, 112 + below, 40, 0x000000, 0.4)
         .setStrokeStyle(4, 0xffffff, 0.7)
         .setScrollFactor(0)
         .setDepth(100)
         .setInteractive({ useHandCursor: true });
-      this.badge = this.add.image(48, 112, this.form.texture).setScrollFactor(0).setDepth(101);
+      this.badge = this.add.image(48, 112 + below, this.form.texture).setScrollFactor(0).setDepth(101);
       this.badge.setScale(Math.min(0.42, 56 / this.badge.width));
-      this.add.text(76, 144, '⇄', { fontSize: '26px', color: '#ffffff' }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
+      this.add.text(76, 144 + below, '⇄', { fontSize: '26px', color: '#ffffff' }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
       bg.on('pointerdown', () => this.openPicker());
       this.input.keyboard?.on('keydown-C', () => this.openPicker());
     }
@@ -228,7 +277,7 @@ export class LevelScene extends Phaser.Scene {
   /** Called when the picker closes: swap to the chosen character, keeping the same fraction of health. */
   private applyCharacter() {
     this.controls.reset();
-    const next = getForm(this.form.id, Save.character);
+    const next = this.currentForm(this.form.id);
     if (!this.form.character || next.character?.id === this.form.character.id) return;
 
     const frac = this.hearts / this.maxHearts;
@@ -404,6 +453,30 @@ export class LevelScene extends Phaser.Scene {
     );
   }
 
+  // ------------------------------------------------------------ collectibles
+
+  private collect(item: Phaser.Physics.Arcade.Sprite) {
+    if (!item.active) return;
+    const value = item.getData('value') as number;
+    Save.collect(this.level.id, item.getData('id') as string, value);
+    Sfx.play(value > 1 ? 'grub' : 'bug');
+    const pop = this.add
+      .text(item.x, item.y - 20, `+${value}`, { fontSize: '34px', color: '#fff8e1', stroke: '#2a6f3b', strokeThickness: 6 })
+      .setOrigin(0.5)
+      .setDepth(70);
+    this.tweens.add({ targets: pop, y: pop.y - 50, alpha: 0, duration: 650, onComplete: () => pop.destroy() });
+    this.tweens.killTweensOf(item);
+    item.destroy();
+    this.refreshBugCounter(true);
+  }
+
+  /** "🐛 12" top-left, with a ⬆ once there's enough for an upgrade. */
+  private refreshBugCounter(bump = false) {
+    const ready = Save.character && Save.canAffordUpgrade();
+    this.bugText.setText(`🐛 ${Save.bank}${ready ? '  ⬆️' : ''}`);
+    if (bump) this.tweens.add({ targets: this.bugText, scale: 1.25, duration: 90, yoyo: true });
+  }
+
   // ------------------------------------------------------------ trampolines
 
   private onPad(pad: Phaser.Physics.Arcade.Sprite) {
@@ -555,6 +628,7 @@ export class LevelScene extends Phaser.Scene {
 
   /** Axolotl: zap everything around you. */
   private thunder(a: Ability, now: number) {
+    const damage = a.damage ?? 1;
     Sfx.play('zap');
     const radius = a.radius ?? 200;
     this.ring(this.player.x, this.player.y, radius, 0xffee58);
@@ -565,7 +639,7 @@ export class LevelScene extends Phaser.Scene {
       if (Phaser.Math.Distance.Between(en.x, en.y, this.player.x, this.player.y) > radius) return;
       const bolt = this.add.text(en.x, en.y - 20, '⚡', { fontSize: '56px' }).setOrigin(0.5).setDepth(60);
       this.tweens.add({ targets: bolt, alpha: 0, scale: 1.6, duration: 380, onComplete: () => bolt.destroy() });
-      this.zapEnemy(en, now);
+      this.zapEnemy(en, now, damage);
     });
   }
 
@@ -602,7 +676,7 @@ export class LevelScene extends Phaser.Scene {
       const dx = (en.x - this.player.x) * this.facing;
       if (en.defeated || dx < -10 || dx > range + en.displayWidth / 2) return;
       if (Math.abs(en.y - this.player.y) > 70 + en.displayHeight / 2) return;
-      this.zapEnemy(en, now);
+      this.zapEnemy(en, now, a.damage ?? 1);
     });
   }
 
