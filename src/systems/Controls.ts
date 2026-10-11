@@ -4,25 +4,32 @@ import Phaser from 'phaser';
 export interface ControlState {
   left: boolean;
   right: boolean;
+  /** Jump on land; swim up in water. */
   jump: boolean;
+  /** Swim down (water levels only). */
+  down: boolean;
   action: boolean;
 }
 
+const NONE: ControlState = { left: false, right: false, jump: false, down: false, action: false };
+
 /** Keyboard + on-screen touch buttons feeding one ControlState. */
 export class Controls {
-  readonly state: ControlState = { left: false, right: false, jump: false, action: false };
+  readonly state: ControlState = { ...NONE };
   private keys: Record<string, Phaser.Input.Keyboard.Key> = {};
   /** Set by the level; dims the on-screen action button while the attack is cooling down. */
   actionReady = true;
   private actionPad: Phaser.GameObjects.GameObject[] = [];
   private actionLabel?: Phaser.GameObjects.Text;
   private pendingIcon = '💥';
-  private touch: ControlState = { left: false, right: false, jump: false, action: false };
+  private touch: ControlState = { ...NONE };
+  private water: boolean;
 
-  constructor(scene: Phaser.Scene) {
+  constructor(scene: Phaser.Scene, opts: { water?: boolean } = {}) {
+    this.water = !!opts.water;
     const kb = scene.input.keyboard;
     if (kb) {
-      this.keys = kb.addKeys('LEFT,RIGHT,UP,SPACE,A,D,W,X,Z') as Record<string, Phaser.Input.Keyboard.Key>;
+      this.keys = kb.addKeys('LEFT,RIGHT,UP,DOWN,SPACE,A,D,W,S,X,Z') as Record<string, Phaser.Input.Keyboard.Key>;
     }
     const wantTouch =
       scene.sys.game.device.input.touch || new URLSearchParams(location.search).has('touch');
@@ -59,7 +66,13 @@ export class Controls {
     };
     pad(90, H - 80, 62, '◀', 'left');
     pad(250, H - 80, 62, '▶', 'right');
-    pad(W - 90, H - 80, 62, '⬆', 'jump');
+    if (this.water) {
+      // Swimming: up and down stacked on the right, the ability beside them.
+      pad(W - 90, H - 215, 62, '⬆', 'jump');
+      pad(W - 90, H - 80, 62, '⬇', 'down');
+    } else {
+      pad(W - 90, H - 80, 62, '⬆', 'jump');
+    }
     pad(W - 250, H - 80, 62, '💥', 'action');
   }
 
@@ -71,7 +84,7 @@ export class Controls {
 
   /** Release any held touch buttons (e.g. after the level was paused under an overlay). */
   reset() {
-    this.touch = { left: false, right: false, jump: false, action: false };
+    this.touch = { ...NONE };
   }
 
   update() {
@@ -81,6 +94,7 @@ export class Controls {
     this.state.left = this.touch.left || down('LEFT', 'A');
     this.state.right = this.touch.right || down('RIGHT', 'D');
     this.state.jump = this.touch.jump || down('UP', 'W', 'SPACE');
+    this.state.down = this.touch.down || down('DOWN', 'S');
     this.state.action = this.touch.action || down('X', 'Z');
   }
 }

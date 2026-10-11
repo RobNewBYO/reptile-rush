@@ -35,6 +35,7 @@ const EGG: FormConfig = {
 /** Sprite scale per life stage (placeholder art is drawn at full size). */
 const STAGE_SCALE: Record<string, number> = {
   hatchling: 0.62,
+  juvenile: 0.8,
 };
 
 /** Resolve an episode's form for the character the kid chose. */

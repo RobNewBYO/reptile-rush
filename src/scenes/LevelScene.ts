@@ -7,7 +7,7 @@ import { THEMES } from '../config/themes';
 import { Enemy } from '../entities/Enemy';
 import { Controls } from '../systems/Controls';
 import { Save } from '../systems/Save';
-import { arenaStartX, findHidingSpots } from '../systems/levelRules';
+import { findHidingSpots } from '../systems/levelRules';
 import { Sfx } from '../systems/Sfx';
 import { addMuteButton } from './ui';
 
@@ -28,7 +28,12 @@ export class LevelScene extends Phaser.Scene {
   private padReadyAt = 0;
   private pickups!: Phaser.Physics.Arcade.Group;
   private bugText!: Phaser.GameObjects.Text;
+  /** The final boss (ends the level). */
   private boss!: Enemy;
+  /** Long levels have a checkpoint flag in the middle: reaching it refills hearts and saves your place. */
+  private checkpointReached = false;
+  private flag?: Phaser.GameObjects.Text;
+  private water = false;
 
   private maxHearts = EGG_HEARTS;
   private hearts = EGG_HEARTS;
@@ -62,8 +67,12 @@ export class LevelScene extends Phaser.Scene {
     super('Level');
   }
 
-  init(data: { levelId: string; formId: string; hurt?: number }) {
+  init(data: { levelId: string; formId: string; hurt?: number; checkpoint?: boolean }) {
     this.level = this.cache.json.get(data.levelId) as LevelConfig;
+    this.water = !!this.level.water;
+    // Coming back after a loss past the checkpoint: start from the flag, not the beginning.
+    this.checkpointReached = !!data.checkpoint && !!this.level.checkpoint;
+    this.flag = undefined;
     this.form = this.currentForm(data.formId);
     this.maxHearts = this.form.character?.maxHearts ?? EGG_HEARTS;
     this.hearts = this.maxHearts;
@@ -87,30 +96,46 @@ export class LevelScene extends Phaser.Scene {
     const { width, height } = this.level;
     const theme = THEMES[this.level.theme ?? 'meadow'] ?? THEMES.meadow;
     this.cameras.main.setBackgroundColor(theme.sky).fadeIn(300);
-    this.physics.world.setBounds(0, 0, width, height + 200);
+    // Water levels fill the screen top to bottom, so the world is exactly one screen tall.
+    this.physics.world.setBounds(0, 0, width, this.water ? height : height + 200);
 
+    // The floor and the ledges are separate groups: projectiles are stopped by ledges and gates but
+    // pass over the floor, so a tall wave fired along the seabed isn't destroyed by the sand.
+    const floor = this.physics.add.staticGroup();
     const solids = this.physics.add.staticGroup();
-    for (let x = 0; x < width; x += 64) solids.create(x + 32, height - 32, theme.ground);
+    for (let x = 0; x < width; x += 64) floor.create(x + 32, height - 32, theme.ground);
     for (const p of this.level.platforms) {
       const plat = solids.create(p.x, p.y, 'platform') as Phaser.Physics.Arcade.Sprite;
       plat.setDisplaySize(p.w, 24).refreshBody();
+      if (this.water) plat.setTint(0xffb3a0); // coral ledge
     }
 
     // Spawn in the gap between the left and right touch buttons, not underneath one.
-    this.player = this.physics.add.sprite(360, height - 140, this.form.texture);
-    this.player.setCollideWorldBounds(true).setDragX(900);
+    const cp = this.level.checkpoint;
+    const startX = this.checkpointReached && cp ? cp.x : 360;
+    this.player = this.physics.add.sprite(startX, this.water ? height / 2 : height - 140, this.form.texture);
+    this.player.setCollideWorldBounds(true);
+    if (this.water) (this.player.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+    else this.player.setDragX(900);
     this.applyFormToPlayer();
     this.physics.add.collider(this.player, solids);
+    this.physics.add.collider(this.player, floor);
 
-    // Group defaults override per-sprite settings, so world-bounds collision must be set here.
-    this.enemies = this.physics.add.group({ collideWorldBounds: true });
+    // Group defaults override per-sprite settings, so world-bounds collision and gravity are set here.
+    this.enemies = this.physics.add.group({ collideWorldBounds: true, allowGravity: !this.water });
     for (const e of this.level.enemies) {
-      this.enemies.add(new Enemy(this, e.x, height - 120, ENEMIES[e.type], e.patrol));
+      if (this.checkpointReached && cp && e.x < cp.x) continue; // already passed: resuming from the flag
+      const y = this.water ? (e.y ?? height / 2) : height - 120;
+      this.enemies.add(new Enemy(this, e.x, y, ENEMIES[e.type], e.patrol, this.water));
     }
-    this.boss = new Enemy(this, this.level.boss.x, height - 140, ENEMIES[this.level.boss.type]);
+    const bossY = this.water ? height / 2 : height - 140;
+    this.boss = new Enemy(this, this.level.boss.x, bossY, ENEMIES[this.level.boss.type], 150, this.water);
     this.enemies.add(this.boss);
     this.boss.once('gone', () => this.completeLevel());
+    // Resuming from the flag: a moment of grace, since something may be swimming right beside it.
+    if (this.checkpointReached) this.invulnUntil = this.time.now + 2000;
     this.physics.add.collider(this.enemies, solids);
+    this.physics.add.collider(this.enemies, floor);
     this.physics.add.overlap(this.player, this.enemies, (_p, e) => this.onContact(e as unknown as Enemy));
 
     // Projectiles (venom, water).
@@ -156,16 +181,27 @@ export class LevelScene extends Phaser.Scene {
     this.physics.add.overlap(this.player, this.waves, (_p, w) => this.onWaveHit(w as Phaser.GameObjects.GameObject));
     this.boss.on('pound', (x: number, floorY: number) => this.onBossPound(x, floorY));
 
+    // The checkpoint flag: a banner planted on the floor.
+    if (cp) {
+      this.flag = this.add
+        .text(cp.x, height - 64, '🚩', { fontSize: '88px' })
+        .setOrigin(0.5, 1)
+        .setDepth(7)
+        .setAlpha(this.checkpointReached ? 1 : 0.7);
+    }
+
     // Dev-time guard: warn if a level reintroduces a platform the boss can't walk under.
-    if (import.meta.env.DEV) {
+    if (import.meta.env.DEV && !this.water) {
       const bad = findHidingSpots(this.level, this.boss.displayHeight);
       if (bad.length) console.warn(`[${this.level.id}] boss arena hiding spots:`, bad);
     }
 
+    if (this.water) this.addBubbles(theme);
+
     this.cameras.main.setBounds(0, 0, width, height);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
 
-    this.controls = new Controls(this);
+    this.controls = new Controls(this, { water: this.water });
     this.controls.setActionIcon(this.actionIcon());
     this.buildHud();
 
@@ -185,6 +221,37 @@ export class LevelScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off(Phaser.Scenes.Events.RESUME, onResume));
   }
 
+  /** The boss, while it's being fought (awake and alive). */
+  private activeBoss(): Enemy | undefined {
+    const b = this.boss;
+    return b && b.active && !b.defeated && b.awake ? b : undefined;
+  }
+
+  /** Drifting bubbles for atmosphere (scenery only). */
+  private addBubbles(theme: { sky: string }) {
+    void theme;
+    const { width, height } = this.level;
+    for (let i = 0; i < Math.floor(width / 140); i++) {
+      const x = (i * 140 + ((i * 53) % 90)) % width;
+      const y = (i * 97) % height;
+      const b = this.add.image(x, y, 'bubble').setAlpha(0.45).setDepth(2).setScale(0.6 + ((i * 7) % 5) * 0.2);
+      this.tweens.add({
+        targets: b,
+        y: y - 140 - ((i * 11) % 80),
+        duration: 4500 + ((i * 331) % 3500),
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.InOut',
+      });
+    }
+  }
+
+  /** The power the action button fires: the animal's water power in water levels. */
+  private currentAbility(): Ability {
+    const ch = this.form.character!;
+    return this.water ? ch.waterAbility : ch.ability;
+  }
+
   /** The form for the chosen character, with that animal's upgrades applied. */
   private currentForm(formId: string): FormConfig {
     const c = Save.character;
@@ -192,7 +259,8 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private actionIcon(): string {
-    return this.form.character?.ability.icon ?? this.form.attack?.icon ?? '💥';
+    if (this.form.character) return this.currentAbility().icon;
+    return this.form.attack?.icon ?? '💥';
   }
 
   /** Texture, scale and hitbox for the current form (used at start and on a character switch). */
@@ -250,7 +318,7 @@ export class LevelScene extends Phaser.Scene {
       .setDepth(101)
       .setVisible(false);
     this.bossIcon = this.add
-      .text(barRight - BOSS_BAR_W - 28, 34, this.boss.cfg.icon ?? '👹', { fontSize: '36px' })
+      .text(barRight - BOSS_BAR_W - 28, 34, '👹', { fontSize: '36px' })
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(100)
@@ -397,7 +465,8 @@ export class LevelScene extends Phaser.Scene {
   private lose() {
     this.dying = true;
     Sfx.play('lose');
-    const bossFight = this.boss.awake && !this.boss.defeated;
+    const fighting = this.activeBoss();
+    const bossFight = !!fighting;
     const { width, height } = this.scale;
 
     const icon = this.add
@@ -411,17 +480,22 @@ export class LevelScene extends Phaser.Scene {
     this.time.delayedCall(1000, () => this.cameras.main.fadeOut(300));
     this.time.delayedCall(1350, () => {
       if (!bossFight) {
-        this.scene.restart({ levelId: this.level.id, formId: this.form.id, hurt: this.hurtCount });
+        this.scene.restart({
+          levelId: this.level.id,
+          formId: this.form.id,
+          hurt: this.hurtCount,
+          checkpoint: this.checkpointReached,
+        });
         return;
       }
       icon.destroy();
-      this.resetBossFight();
+      this.resetBossFight(fighting!);
       this.hearts = this.maxHearts;
       this.refreshHearts();
       // Just outside the arena, so the player walks in and wakes the boss on their own terms.
       (this.player.body as Phaser.Physics.Arcade.Body).reset(
         this.level.boss.wakeX - 60,
-        this.level.height - 140,
+        this.water ? this.level.height / 2 : this.level.height - 140,
       );
       this.facing = 1;
       this.invulnUntil = this.time.now + 1500;
@@ -433,11 +507,41 @@ export class LevelScene extends Phaser.Scene {
   }
 
   /** Boss back to full health, asleep at its spawn; its bar hidden until it wakes again. */
-  private resetBossFight() {
-    this.boss.resetFight();
-    this.bossBarBg.setVisible(false);
-    this.bossBar.setVisible(false);
-    this.bossIcon.setVisible(false);
+  private resetBossFight(b: Enemy) {
+    b.resetFight();
+    this.refreshBossBar();
+  }
+
+  /** Show the bar for whichever boss is being fought, or hide it between fights. */
+  private refreshBossBar() {
+    const b = this.activeBoss();
+    this.bossBarBg.setVisible(!!b);
+    this.bossBar.setVisible(!!b);
+    this.bossIcon.setVisible(!!b);
+    if (b) {
+      this.bossIcon.setText(b.cfg.icon ?? '👹');
+      this.bossBar.width = BOSS_BAR_W * Math.max(0, b.hp / b.cfg.hp);
+    }
+  }
+
+  /** Passing the flag: full heal, and a loss from here on restarts from this point. */
+  private reachCheckpoint() {
+    this.checkpointReached = true;
+    Sfx.play('complete');
+    this.hearts = this.maxHearts;
+    this.refreshHearts();
+    const banner = this.add
+      .text(this.scale.width / 2, this.scale.height / 2, '🚩', { fontSize: '120px' })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(200)
+      .setScale(0);
+    this.tweens.add({ targets: banner, scale: 1, duration: 300, ease: 'Back.Out' });
+    this.tweens.add({ targets: banner, alpha: 0, delay: 1000, duration: 400, onComplete: () => banner.destroy() });
+    if (this.flag) {
+      this.flag.setAlpha(1);
+      this.tweens.add({ targets: this.flag, scale: 1.4, duration: 200, yoyo: true });
+    }
   }
 
   private refreshHearts() {
@@ -549,19 +653,24 @@ export class LevelScene extends Phaser.Scene {
       Sfx.play('bite');
       return;
     }
-    const a = this.form.character!.ability;
+    const a = this.currentAbility();
     this.actionReadyAt = time + a.cooldown;
     switch (a.kind) {
       case 'venom':
       case 'water':
       case 'spike':
+      case 'tornado':
+      case 'wave':
         return this.fireShot(a);
       case 'scare':
         return this.scareNearby(a, time);
       case 'thunder':
+      case 'zap':
         return this.thunder(a, time);
       case 'slam':
         return this.startSlam(time);
+      case 'splash':
+        return this.splash(a, time);
       case 'tongue':
         return this.tongue(a, time);
     }
@@ -582,23 +691,35 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
-  /** Snake venom / turtle water gun / lizard spike. */
+  /**
+   * Land: snake venom / turtle water gun / lizard spike.
+   * Water: snake & lizard tornadoes and the turtle's wave (taller and wider, so easier to line up).
+   */
   private fireShot(a: Ability) {
-    const spike = a.kind === 'spike';
-    const venom = a.kind === 'venom';
-    Sfx.play(spike ? 'spike' : venom ? 'venom' : 'water');
+    const k = a.kind;
+    const spikeLook = k === 'spike' || (k === 'tornado' && a.style === 'spike');
+    const venomLook = k === 'venom' || (k === 'tornado' && a.style === 'venom');
+    Sfx.play(spikeLook ? 'spike' : venomLook ? 'venom' : 'water');
+    const texture = k === 'spike' ? 'spike' : k === 'tornado' ? 'tornado' : k === 'wave' ? 'wave' : 'shot';
     const shot = this.shots.create(
       this.player.x + this.facing * 40,
-      this.player.y - 4,
-      spike ? 'spike' : 'shot',
+      this.player.y - (k === 'tornado' || k === 'wave' ? 0 : 4),
+      texture,
     ) as Phaser.Physics.Arcade.Sprite;
-    if (spike) {
-      shot.setFlipX(this.facing < 0).setDepth(40);
+    shot.setDepth(40);
+    if (k === 'spike') {
+      shot.setFlipX(this.facing < 0);
+    } else if (k === 'tornado') {
+      shot.setTint(spikeLook ? 0xffa726 : 0x76ff03).setScale(0.9);
+      this.tweens.add({ targets: shot, angle: this.facing * 360, duration: 500, repeat: -1 });
+    } else if (k === 'wave') {
+      shot.setTint(0x4fc3f7).setFlipX(this.facing < 0);
     } else {
-      shot.setTint(venom ? 0x76ff03 : 0x4fc3f7).setScale(venom ? 1.1 : 0.8).setDepth(40);
+      shot.setTint(venomLook ? 0x76ff03 : 0x4fc3f7).setScale(venomLook ? 1.1 : 0.8);
     }
-    shot.setData('kind', a.kind);
+    shot.setData('kind', k);
     shot.setData('knockback', a.knockback ?? 0);
+    shot.setData('knockMs', k === 'wave' ? 900 : 260);
     shot.setData('damage', a.damage ?? 1);
     shot.setData('pierce', a.pierce ?? false);
     (shot.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
@@ -611,12 +732,13 @@ export class LevelScene extends Phaser.Scene {
     const now = this.time.now;
     const dir = Math.sign(shot.body!.velocity.x) || 1;
     const kb = (shot.getData('knockback') as number) ?? 0;
+    const knockMs = (shot.getData('knockMs') as number) ?? 260;
     const damage = (shot.getData('damage') as number) ?? 1;
     // Piercing shots carry on through small mammals; a boss always stops them.
     const pierces = (shot.getData('pierce') as boolean) && !enemy.cfg.boss;
     if (!pierces) shot.destroy();
     if (this.zapEnemy(enemy, now, damage) || enemy.defeated) return;
-    if (kb > 0) enemy.knock(now, 260, dir * kb);
+    if (kb > 0) enemy.knock(now, knockMs, dir * kb);
   }
 
   /** Lizard: every nearby mammal freezes with fear. */
@@ -639,7 +761,8 @@ export class LevelScene extends Phaser.Scene {
     const damage = a.damage ?? 1;
     Sfx.play('zap');
     const radius = a.radius ?? 200;
-    this.ring(this.player.x, this.player.y, radius, 0xffee58);
+    // In water the current carries the charge: a bigger, bluer ring.
+    this.ring(this.player.x, this.player.y, radius, a.kind === 'zap' ? 0x80d8ff : 0xffee58);
     this.cameras.main.flash(120, 255, 255, 200);
     this.enemies.getChildren().forEach((e) => {
       const en = e as unknown as Enemy;
@@ -666,10 +789,11 @@ export class LevelScene extends Phaser.Scene {
   private tongue(a: Ability, now: number) {
     Sfx.play('tongue');
     const range = a.range ?? 170;
+    const band = a.band ?? 70;
     const y = this.player.y - 8;
     const startX = this.player.x + this.facing * 30;
     const line = this.add
-      .rectangle(startX, y, 8, 10, 0xff6f91)
+      .rectangle(startX, y, 8, band > 80 ? 18 : 10, 0xff6f91)
       .setOrigin(this.facing > 0 ? 0 : 1, 0.5)
       .setDepth(50);
     this.tweens.add({
@@ -683,8 +807,26 @@ export class LevelScene extends Phaser.Scene {
       const en = e as unknown as Enemy;
       const dx = (en.x - this.player.x) * this.facing;
       if (en.defeated || dx < -10 || dx > range + en.displayWidth / 2) return;
-      if (Math.abs(en.y - this.player.y) > 70 + en.displayHeight / 2) return;
+      if (Math.abs(en.y - this.player.y) > band + en.displayHeight / 2) return;
       this.zapEnemy(en, now, a.damage ?? 1);
+    });
+  }
+
+  /** Toad in water: a mega splash that hits and shoves everything around (but not spiky ones). */
+  private splash(a: Ability, now: number) {
+    const radius = a.radius ?? 200;
+    Sfx.play('slam');
+    this.cameras.main.shake(140, 0.007);
+    this.ring(this.player.x, this.player.y, radius, 0x4fc3f7);
+    const dmg = this.form.character!.stompDamage + (a.damage ? a.damage - 1 : 0);
+    const kb = a.knockback ?? 0;
+    this.enemies.getChildren().forEach((e) => {
+      const en = e as unknown as Enemy;
+      if (en.defeated || en.cfg.spiky) return;
+      const dist = Phaser.Math.Distance.Between(en.x, en.y, this.player.x, this.player.y);
+      if (dist > radius) return;
+      const ang = Math.atan2(en.y - this.player.y, en.x - this.player.x);
+      if (!this.zapEnemy(en, now, dmg) && kb > 0) en.knock(now, 500, Math.cos(ang) * kb, Math.sin(ang) * kb);
     });
   }
 
@@ -699,7 +841,7 @@ export class LevelScene extends Phaser.Scene {
 
   private landSlam(now: number) {
     this.slamming = false;
-    const a = this.form.character!.ability;
+    const a = this.currentAbility();
     const radius = a.radius ?? 120;
     Sfx.play('slam');
     this.cameras.main.shake(140, 0.007);
@@ -722,26 +864,48 @@ export class LevelScene extends Phaser.Scene {
     const ch = this.form.character;
 
     if (!this.finished && !this.dying) {
-      if (c.left) {
-        this.player.setVelocityX(-this.form.speed);
-        this.facing = -1;
-      } else if (c.right) {
-        this.player.setVelocityX(this.form.speed);
-        this.facing = 1;
-      }
-
-      // Jumping; the frog gets one extra jump while airborne (needs a fresh press).
-      if (body.blocked.down) {
-        this.jumpsLeft = ch?.doubleJump ? 1 : 0;
-        if (c.jump) {
-          this.player.setVelocityY(-this.form.jumpVelocity);
-          Sfx.play('jump');
+      if (this.water) {
+        // Swimming: free movement in all directions with a little glide. The jump stat becomes
+        // vertical swim speed, so a bigger jump (or a jump upgrade) swims up and down faster.
+        const sp = this.form.speed * 0.95;
+        const vsp = this.form.jumpVelocity * 0.5;
+        let tx = 0;
+        let ty = 0;
+        if (c.left) {
+          tx = -sp;
+          this.facing = -1;
+        } else if (c.right) {
+          tx = sp;
+          this.facing = 1;
         }
-      } else if (c.jump && !this.prevJump && this.jumpsLeft > 0) {
-        this.jumpsLeft -= 1;
-        this.player.setVelocityY(-this.form.jumpVelocity * 0.92);
-        Sfx.play('doubleJump');
-        this.puff(this.player.x, this.player.y + 10);
+        if (c.jump) ty = -vsp;
+        else if (c.down) ty = vsp;
+        this.player.setVelocity(
+          body.velocity.x + (tx - body.velocity.x) * 0.3,
+          body.velocity.y + (ty - body.velocity.y) * 0.3,
+        );
+      } else {
+        if (c.left) {
+          this.player.setVelocityX(-this.form.speed);
+          this.facing = -1;
+        } else if (c.right) {
+          this.player.setVelocityX(this.form.speed);
+          this.facing = 1;
+        }
+
+        // Jumping; the frog gets one extra jump while airborne (needs a fresh press).
+        if (body.blocked.down) {
+          this.jumpsLeft = ch?.doubleJump ? 1 : 0;
+          if (c.jump) {
+            this.player.setVelocityY(-this.form.jumpVelocity);
+            Sfx.play('jump');
+          }
+        } else if (c.jump && !this.prevJump && this.jumpsLeft > 0) {
+          this.jumpsLeft -= 1;
+          this.player.setVelocityY(-this.form.jumpVelocity * 0.92);
+          Sfx.play('doubleJump');
+          this.puff(this.player.x, this.player.y + 10);
+        }
       }
 
       if (c.action && time >= this.actionReadyAt) this.useAbility(time);
@@ -763,14 +927,17 @@ export class LevelScene extends Phaser.Scene {
     // Anti-camping: standing on a platform for a few seconds during the fight makes the boss quake.
     const dt = this.lastUpdate ? time - this.lastUpdate : 0;
     this.lastUpdate = time;
-    const perched = body.blocked.down && body.bottom < LevelScene.FLOOR_TOP - 30;
-    this.campMs = this.boss.awake && !this.boss.defeated && perched ? this.campMs + dt : 0;
-    if (this.campMs > 3000) {
+    const perched = !this.water && body.blocked.down && body.bottom < LevelScene.FLOOR_TOP - 30;
+    const fighting = this.activeBoss();
+    this.campMs = fighting && perched ? this.campMs + dt : 0;
+    if (this.campMs > 3000 && fighting) {
       this.campMs = 0;
-      this.boss.requestPound();
+      fighting.requestPound();
     }
 
     this.player.setFlipX(!this.form.rolls && this.facing < 0);
+    // Tilt gently into a climb or a dive.
+    if (this.water) this.player.setAngle(Phaser.Math.Clamp(body.velocity.y * 0.04, -18, 18) * this.facing);
 
     // Blink while invulnerable.
     this.player.setAlpha(time < this.invulnUntil && Math.floor(time / 100) % 2 ? 0.3 : 1);
@@ -779,27 +946,30 @@ export class LevelScene extends Phaser.Scene {
 
     this.controls.actionReady = time >= this.actionReadyAt;
 
-    // Leaving the arena ends the fight: the boss can't be lured out and the fight starts fresh.
-    if (this.boss.awake && !this.boss.defeated && this.player.x < arenaStartX(this.level)) {
-      this.resetBossFight();
+    const b = this.boss;
+    if (b.active && !b.defeated) {
+      const arenaStart = this.level.boss.wakeX - 250;
+      // Leaving the arena ends the fight: the boss can't be lured out and the fight starts fresh.
+      if (b.awake && this.player.x < arenaStart) this.resetBossFight(b);
+      // The boss wakes when the player gets close.
+      if (!b.awake && this.player.x > this.level.boss.wakeX) {
+        b.awake = true;
+        this.refreshBossBar();
+      }
     }
-
-    // Boss wakes when the player gets close.
-    if (!this.boss.awake && this.player.x > this.level.boss.wakeX) {
-      this.boss.awake = true;
-      this.bossBarBg.setVisible(true);
-      this.bossBar.setVisible(true);
-      this.bossIcon.setVisible(true);
-    }
-    if (this.boss.active) {
-      this.bossBar.width = BOSS_BAR_W * Math.max(0, this.boss.hp / this.boss.cfg.hp);
-    }
+    const cp = this.level.checkpoint;
+    if (cp && !this.checkpointReached && this.player.x > cp.x) this.reachCheckpoint();
+    const live = this.activeBoss();
+    if (live) this.bossBar.width = BOSS_BAR_W * Math.max(0, live.hp / live.cfg.hp);
 
     this.enemies.getChildren().forEach((e) => {
       const en = e as unknown as Enemy;
-      en.tick(time, this.player.x);
+      en.tick(time, this.player.x, this.player.y);
       // Safety net: if anything ever ends up outside the level, put it back rather than lose it.
-      if (!en.defeated && (en.y > this.level.height + 50 || en.x < 0 || en.x > this.level.width)) {
+      if (
+        !en.defeated &&
+        (en.y > this.level.height + 50 || en.y < -50 || en.x < 0 || en.x > this.level.width)
+      ) {
         en.respawn();
       }
     });

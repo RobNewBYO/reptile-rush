@@ -11,6 +11,7 @@ export interface EpisodeConfig {
 export const EPISODES: EpisodeConfig[] = [
   { id: 1, name: 'Egg', icon: '🥚', form: 'egg', levels: ['ep1-l1', 'ep1-l2'] },
   { id: 2, name: 'Hatchling', icon: '🐣', form: 'hatchling', levels: ['ep2-l1', 'ep2-l2', 'ep2-l3', 'ep2-l4'] },
+  { id: 3, name: 'Juvenile', icon: '🌊', form: 'juvenile', levels: ['ep3-l1', 'ep3-l2'] },
 ];
 
 export const ALL_LEVEL_IDS = EPISODES.flatMap((e) => e.levels);

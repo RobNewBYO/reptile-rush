@@ -12,6 +12,8 @@ export interface EnemyConfig {
   height?: number;
   /** Boss only: how long it stays dizzy (and hittable) after a charge. Shrinks on later bosses. */
   dizzyMs?: number;
+  /** Water levels: gentle vertical bobbing around its spawn height. */
+  swim?: { amp: number; periodSec: number };
   /** Emoji shown in the HUD for bosses (no reading needed). */
   icon?: string;
 }
@@ -87,6 +89,34 @@ export const ENEMIES: Record<string, EnemyConfig> = {
     chargeSpeed: 440,
     boss: true,
     icon: '🦘',
+    dizzyMs: 1300,
+  },
+  // Water animals
+  piranha: { id: 'piranha', texture: 'piranha', hp: 1, speed: 110, swim: { amp: 26, periodSec: 1.8 } },
+  jellyfish: { id: 'jellyfish', texture: 'jellyfish', hp: 1, speed: 28, swim: { amp: 120, periodSec: 4.2 } },
+  pufferfish: { id: 'pufferfish', texture: 'pufferfish', hp: 1, speed: 36, spiky: true, swim: { amp: 55, periodSec: 3.4 } },
+  crab: { id: 'crab', texture: 'crab', hp: 1, speed: 55 },
+  eel: { id: 'eel', texture: 'eel', hp: 1, speed: 90, swim: { amp: 70, periodSec: 2.4 } },
+  shark: {
+    id: 'shark',
+    height: 100,
+    texture: 'shark',
+    hp: 7,
+    speed: 130,
+    chargeSpeed: 500,
+    boss: true,
+    icon: '🦈',
+    dizzyMs: 1500,
+  },
+  octopus: {
+    id: 'octopus',
+    height: 130,
+    texture: 'octopus',
+    hp: 9,
+    speed: 110,
+    chargeSpeed: 460,
+    boss: true,
+    icon: '🐙',
     dizzyMs: 1300,
   },
 };

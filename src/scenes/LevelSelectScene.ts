@@ -19,7 +19,7 @@ export class LevelSelectScene extends Phaser.Scene {
 
     const { height } = this.scale;
     this.add
-      .text(24, 32, `🐛 ${Save.bank}`, { fontSize: '34px', color: '#fff8e1', stroke: '#1d3b2a', strokeThickness: 6 })
+      .text(24, 20, `🐛 ${Save.bank}`, { fontSize: '26px', color: '#fff8e1', stroke: '#1d3b2a', strokeThickness: 5 })
       .setOrigin(0, 0.5);
 
     // Start over (small and out of the way; the next screen needs a deliberate hold).
@@ -36,10 +36,10 @@ export class LevelSelectScene extends Phaser.Scene {
     if (Save.character) {
       const ready = Save.canAffordUpgrade();
       const up = this.add
-        .circle(width - 190, height - 70, 52, ready ? 0xfff176 : 0xffffff, 0.92)
-        .setStrokeStyle(6, ready ? 0xffa000 : 0xffd54f)
+        .circle(width - 165, height - 50, 40, ready ? 0xfff176 : 0xffffff, 0.92)
+        .setStrokeStyle(5, ready ? 0xffa000 : 0xffd54f)
         .setInteractive({ useHandCursor: true });
-      this.add.text(width - 190, height - 70, '⬆️', { fontSize: '56px' }).setOrigin(0.5);
+      this.add.text(width - 165, height - 50, '⬆️', { fontSize: '44px' }).setOrigin(0.5);
       if (ready) this.tweens.add({ targets: up, scale: 1.12, duration: 500, yoyo: true, repeat: -1 });
       up.on('pointerdown', () => {
         Sfx.play('ui');
@@ -50,12 +50,12 @@ export class LevelSelectScene extends Phaser.Scene {
     // Change character any time once hatched.
     if (Save.character) {
       const swap = this.add
-        .circle(width - 70, height - 70, 52, 0xffffff, 0.92)
-        .setStrokeStyle(6, 0xffd54f)
+        .circle(width - 60, height - 50, 40, 0xffffff, 0.92)
+        .setStrokeStyle(5, 0xffd54f)
         .setInteractive({ useHandCursor: true });
-      const pic = this.add.image(width - 70, height - 70, CHARACTERS[Save.character].texture);
-      pic.setScale(Math.min(0.42, 70 / pic.width));
-      this.add.text(width - 36, height - 30, '⇄', { fontSize: '30px', color: '#2a6f3b' }).setOrigin(0.5);
+      const pic = this.add.image(width - 60, height - 50, CHARACTERS[Save.character].texture);
+      pic.setScale(Math.min(0.36, 54 / pic.width));
+      this.add.text(width - 34, height - 22, '⇄', { fontSize: '24px', color: '#2a6f3b' }).setOrigin(0.5);
       swap.on('pointerdown', () => {
         Sfx.play('ui');
         this.scene.start('Characters', { overlay: false, returnTo: 'LevelSelect', canClose: true });
@@ -64,36 +64,41 @@ export class LevelSelectScene extends Phaser.Scene {
 
     let prevDone = true; // first level always open
     EPISODES.forEach((ep, row) => {
-      const y = 140 + row * 190;
+      const y = 96 + row * 140;
       const built = ep.levels.length > 0;
       const epUnlocked = built && prevDone;
 
-      this.add.rectangle(width / 2, y, width - 80, 160, 0x000000, 0.25).setStrokeStyle(4, 0xffffff, 0.3);
+      // Stops short of the mute button on the right.
+      const rowRight = width - 110;
+      this.add
+        .rectangle((40 + rowRight) / 2, y, rowRight - 40, 128, 0x000000, 0.25)
+        .setStrokeStyle(4, 0xffffff, 0.3);
 
       // Episode icon: shows the chosen character once hatched.
       if (ep.id > 1 && Save.character) {
         const pic = this.add.image(110, y, CHARACTERS[Save.character].texture);
-        pic.setScale(Math.min(0.62, 90 / pic.width)).setAlpha(built ? 1 : 0.5);
+        pic.setScale(Math.min(0.55, 80 / pic.width)).setAlpha(built ? 1 : 0.5);
       } else {
-        this.add.text(110, y, ep.icon, { fontSize: '84px' }).setOrigin(0.5).setAlpha(built ? 1 : 0.5);
+        this.add.text(110, y, ep.icon, { fontSize: '70px' }).setOrigin(0.5).setAlpha(built ? 1 : 0.5);
       }
 
       if (!built) {
-        this.add.text(width / 2 + 40, y, '🔒', { fontSize: '64px' }).setOrigin(0.5);
+        this.add.text((40 + rowRight) / 2 + 40, y, '🔒', { fontSize: '56px' }).setOrigin(0.5);
         return;
       }
 
       // Levels share the row; squeeze the spacing so four fit even on a 4:3 iPad.
-      const step = ep.levels.length > 1 ? Math.min(150, (width - 330) / (ep.levels.length - 1)) : 150;
+      const lastX = rowRight - 60;
+      const step = ep.levels.length > 1 ? Math.min(150, (lastX - 260) / (ep.levels.length - 1)) : 150;
       ep.levels.forEach((id, i) => {
         const open = epUnlocked && (i === 0 || Save.isComplete(ep.levels[i - 1]));
         const x = 260 + i * step;
         const btn = this.add
-          .circle(x, y - 12, 52, open ? 0xffffff : 0x666666, open ? 0.95 : 0.6)
-          .setStrokeStyle(6, open ? 0xffd54f : 0x444444);
+          .circle(x, y - 10, 42, open ? 0xffffff : 0x666666, open ? 0.95 : 0.6)
+          .setStrokeStyle(5, open ? 0xffd54f : 0x444444);
         this.add
-          .text(x, y - 12, open ? String(i + 1) : '🔒', {
-            fontSize: open ? '60px' : '40px',
+          .text(x, y - 10, open ? String(i + 1) : '🔒', {
+            fontSize: open ? '48px' : '34px',
             color: '#2a6f3b',
             fontStyle: 'bold',
           })
@@ -103,14 +108,14 @@ export class LevelSelectScene extends Phaser.Scene {
         const total = ((this.cache.json.get(id)?.collectibles ?? []) as unknown[]).length;
         if (open && total) {
           this.add
-            .text(x, y + 76, `🐛 ${Save.levelBugs(id).count}/${total}`, { fontSize: '20px', color: '#fff8e1' })
+            .text(x, y + 56, `🐛 ${Save.levelBugs(id).count}/${total}`, { fontSize: '17px', color: '#fff8e1' })
             .setOrigin(0.5);
         }
 
         const stars = Save.starsFor(id);
         for (let s = 0; s < 3; s++) {
           this.add
-            .star(x + (s - 1) * 30, y + 54, 5, 6, 14, s < stars ? 0xffd54f : 0x555555)
+            .star(x + (s - 1) * 26, y + 38, 5, 5, 12, s < stars ? 0xffd54f : 0x555555)
             .setAlpha(open ? 1 : 0.4);
         }
 

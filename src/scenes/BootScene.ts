@@ -278,6 +278,122 @@ export class BootScene extends Phaser.Scene {
     g.generateTexture('ground-outback', 64, 64);
     g.clear();
 
+    // ---- Water levels ----
+
+    // Seabed tile: pale sand with pebbles
+    g.fillStyle(0xc9a85a).fillRect(0, 0, 64, 64);
+    g.fillStyle(0xeedc9a).fillRect(0, 0, 64, 12);
+    g.fillStyle(0xa8873f).fillCircle(12, 34, 4).fillCircle(42, 46, 5).fillCircle(54, 26, 3);
+    g.generateTexture('seabed', 64, 64);
+    g.clear();
+
+    // Bubble (scenery)
+    g.lineStyle(2, 0xffffff, 0.9).strokeCircle(8, 8, 6);
+    g.fillStyle(0xffffff, 0.3).fillCircle(8, 8, 6);
+    g.generateTexture('bubble', 16, 16);
+    g.clear();
+
+    // Tornado (tinted per animal): a stack of shrinking swirls
+    g.fillStyle(0xffffff, 0.92);
+    for (let i = 0; i < 6; i++) g.fillEllipse(30, 12 + i * 15, 54 - i * 8, 12);
+    g.fillStyle(0xffffff, 0.45).fillEllipse(30, 50, 60, 92);
+    g.generateTexture('tornado', 60, 100);
+    g.clear();
+
+    // Wave (tinted): a tall breaking crest
+    g.fillStyle(0xffffff, 0.85).fillEllipse(40, 60, 60, 116);
+    g.fillStyle(0xffffff, 0.5).fillEllipse(28, 60, 36, 90);
+    g.lineStyle(4, 0xffffff).strokeEllipse(40, 60, 60, 116);
+    g.generateTexture('wave', 80, 120);
+    g.clear();
+
+    // Piranha (faces left): steel back, orange belly, teeth
+    g.fillStyle(0x546e7a).fillEllipse(36, 22, 52, 30);
+    g.fillStyle(0xff7043).fillEllipse(36, 30, 42, 12);
+    g.fillStyle(0x546e7a).fillTriangle(58, 22, 70, 6, 70, 38).fillTriangle(30, 8, 46, 8, 38, -2);
+    g.fillStyle(0xffffff).fillCircle(14, 18, 5).fillTriangle(4, 26, 12, 26, 8, 33).fillTriangle(14, 28, 21, 28, 17, 34);
+    g.fillStyle(0x000000).fillCircle(13, 18, 2.5);
+    g.generateTexture('piranha', 72, 44);
+    g.clear();
+
+    // Jellyfish: translucent dome and trailing tentacles
+    g.fillStyle(0xce93d8, 0.9).fillEllipse(30, 24, 52, 40);
+    g.fillStyle(0xe1bee7, 0.8).fillEllipse(30, 18, 30, 16);
+    g.lineStyle(4, 0xba68c8);
+    for (let i = 0; i < 5; i++) {
+      const x = 12 + i * 9;
+      g.lineBetween(x, 40, x + (i % 2 ? 4 : -4), 56).lineBetween(x + (i % 2 ? 4 : -4), 56, x, 72);
+    }
+    g.fillStyle(0x000000).fillCircle(22, 26, 2.5).fillCircle(38, 26, 2.5);
+    g.generateTexture('jellyfish', 60, 76);
+    g.clear();
+
+    // Pufferfish (spiky!): round yellow body ringed with spines
+    g.lineStyle(4, 0xe65100);
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2;
+      g.lineBetween(32 + Math.cos(a) * 22, 30 + Math.sin(a) * 22, 32 + Math.cos(a) * 31, 30 + Math.sin(a) * 31);
+    }
+    g.fillStyle(0xfdd835).fillCircle(32, 30, 23);
+    g.fillStyle(0xfff59d).fillEllipse(30, 40, 30, 12);
+    g.fillStyle(0xfdd835).fillTriangle(54, 30, 66, 18, 66, 42);
+    g.fillStyle(0xffffff).fillCircle(20, 24, 6);
+    g.fillStyle(0x000000).fillCircle(19, 24, 3);
+    g.fillStyle(0xe65100).fillCircle(9, 34, 3);
+    g.generateTexture('pufferfish', 68, 62);
+    g.clear();
+
+    // Crab (faces left): red shell, raised claws, eye stalks
+    g.lineStyle(4, 0xc62828);
+    for (let i = 0; i < 3; i++) g.lineBetween(14 + i * 6, 30, 6 + i * 4, 40).lineBetween(42 - i * 6, 30, 50 - i * 4, 40);
+    g.fillStyle(0xe53935).fillEllipse(28, 28, 40, 22);
+    g.fillStyle(0xe53935).fillCircle(8, 12, 8).fillCircle(48, 12, 8);
+    g.lineStyle(4, 0xe53935).lineBetween(14, 24, 8, 14).lineBetween(42, 24, 48, 14);
+    g.fillStyle(0xffffff).fillCircle(21, 18, 4).fillCircle(35, 18, 4);
+    g.fillStyle(0x000000).fillCircle(21, 18, 2).fillCircle(35, 18, 2);
+    g.generateTexture('crab', 58, 44);
+    g.clear();
+
+    // Eel: a long green wave with a yellow belly
+    for (let i = 0; i < 10; i++) {
+      const x = 14 + i * 9.4;
+      const y = 20 + Math.sin(i * 0.95) * 8;
+      g.fillStyle(0x558b2f).fillEllipse(x, y, 17, 15 - i * 0.5);
+      g.fillStyle(0xdce775).fillEllipse(x, y + 4, 12, 5);
+    }
+    g.fillStyle(0x558b2f).fillEllipse(10, 24, 20, 17);
+    g.fillStyle(0xffffff).fillCircle(7, 21, 4);
+    g.fillStyle(0x000000).fillCircle(6, 21, 2);
+    g.generateTexture('eel', 112, 40);
+    g.clear();
+
+    // Shark boss (faces left): grey back, pale belly, big fin
+    g.fillStyle(0x607d8b).fillEllipse(100, 62, 160, 56);
+    g.fillStyle(0xeceff1).fillEllipse(96, 76, 130, 24);
+    g.fillStyle(0x607d8b).fillTriangle(10, 62, 46, 40, 46, 84);
+    g.fillTriangle(84, 36, 120, 0, 130, 36);
+    g.fillTriangle(168, 62, 196, 18, 196, 100);
+    g.fillTriangle(70, 80, 100, 98, 104, 76);
+    g.fillStyle(0xffffff).fillTriangle(14, 66, 22, 66, 18, 76).fillTriangle(26, 70, 34, 70, 30, 80).fillTriangle(38, 72, 46, 72, 42, 82);
+    g.fillStyle(0xffffff).fillCircle(48, 54, 7);
+    g.fillStyle(0x000000).fillCircle(46, 54, 3.5);
+    g.lineStyle(3, 0x455a64).lineBetween(66, 56, 66, 70).lineBetween(74, 56, 74, 70).lineBetween(82, 56, 82, 70);
+    g.generateTexture('shark', 200, 104);
+    g.clear();
+
+    // Octopus boss: purple dome, big eyes, eight curling arms
+    g.lineStyle(11, 0x8e24aa);
+    for (let i = 0; i < 8; i++) {
+      const x = 26 + i * 14;
+      g.lineBetween(x, 78, x + Math.sin(i * 1.3) * 14, 106).lineBetween(x + Math.sin(i * 1.3) * 14, 106, x + Math.cos(i * 1.3) * 18, 126);
+    }
+    g.fillStyle(0x8e24aa).fillEllipse(75, 50, 100, 84);
+    g.fillStyle(0xab47bc).fillEllipse(75, 30, 60, 30);
+    g.fillStyle(0xffffff).fillCircle(54, 56, 14).fillCircle(96, 56, 14);
+    g.fillStyle(0x000000).fillCircle(52, 58, 7).fillCircle(94, 58, 7);
+    g.generateTexture('octopus', 150, 132);
+    g.clear();
+
     // Heart
     g.fillStyle(0xe53935).fillCircle(10, 10, 8).fillCircle(22, 10, 8);
     g.fillTriangle(2, 13, 30, 13, 16, 29);

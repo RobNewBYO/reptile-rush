@@ -32,19 +32,25 @@ export function applyUpgrades(base: CharacterConfig, lv: UpgradeLevels = NO_UPGR
   const P = lv.power;
   const t = P / MAX_UPGRADE;
   const bonusDamage = Math.floor(P / 5);
-  const ability: Ability = { ...base.ability };
-  if (P > 0) {
-    ability.cooldown = Math.round(ability.cooldown * (1 - 0.45 * t));
-    if (ability.range !== undefined) ability.range = Math.round(ability.range * (1 + 0.5 * t));
-    if (ability.radius !== undefined) ability.radius = Math.round(ability.radius * (1 + 0.5 * t));
-    if (ability.knockback !== undefined) ability.knockback = Math.round(ability.knockback * (1 + 0.6 * t));
-    if (bonusDamage > 0) ability.damage = (ability.damage ?? 1) + bonusDamage;
-  }
+  /** The same power upgrade applies to the land ability and the water ability alike. */
+  const powered = (a: Ability): Ability => {
+    const out: Ability = { ...a };
+    if (P > 0) {
+      out.cooldown = Math.round(out.cooldown * (1 - 0.45 * t));
+      if (out.range !== undefined) out.range = Math.round(out.range * (1 + 0.5 * t));
+      if (out.radius !== undefined) out.radius = Math.round(out.radius * (1 + 0.5 * t));
+      if (out.knockback !== undefined) out.knockback = Math.round(out.knockback * (1 + 0.6 * t));
+      if (out.band !== undefined) out.band = Math.round(out.band * (1 + 0.5 * t));
+      if (bonusDamage > 0) out.damage = (out.damage ?? 1) + bonusDamage;
+    }
+    return out;
+  };
   return {
     ...base,
     maxHearts: base.maxHearts + lv.endurance,
     jumpVelocity: Math.round(base.jumpVelocity * (1 + 0.04 * lv.jump)),
     stompDamage: base.stompDamage + (base.ability.kind === 'slam' ? bonusDamage : 0),
-    ability,
+    ability: powered(base.ability),
+    waterAbility: powered(base.waterAbility),
   };
 }

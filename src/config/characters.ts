@@ -1,5 +1,9 @@
 export type CharacterId = 'lizard' | 'snake' | 'turtle' | 'toad' | 'axolotl' | 'frog';
-export type AbilityKind = 'venom' | 'scare' | 'water' | 'spike' | 'slam' | 'thunder' | 'tongue';
+export type AbilityKind =
+  // on land
+  | 'venom' | 'scare' | 'water' | 'spike' | 'slam' | 'thunder' | 'tongue'
+  // in water levels (see CharacterConfig.waterAbility)
+  | 'tornado' | 'wave' | 'splash' | 'zap';
 
 export interface Ability {
   kind: AbilityKind;
@@ -21,6 +25,10 @@ export interface Ability {
   damage?: number;
   /** Projectile keeps flying through small mammals it defeats (bosses always stop it). */
   pierce?: boolean;
+  /** Tornado look: venom (green) or spike (orange). */
+  style?: 'venom' | 'spike';
+  /** Half-height of the band a tongue / wave reaches vertically, in px. */
+  band?: number;
 }
 
 export interface CharacterConfig {
@@ -37,6 +45,8 @@ export interface CharacterConfig {
   /** Damage dealt by bouncing on a mammal. */
   stompDamage: number;
   ability: Ability;
+  /** What the action button does in water levels. Upgrades apply to it exactly as to `ability`. */
+  waterAbility: Ability;
   /** For parents/readers; the picker itself is icon-only. */
   strength: string;
   weakness: string;
@@ -61,6 +71,7 @@ export const CHARACTERS: Record<CharacterId, CharacterConfig> = {
     stompDamage: 1,
     ability: { kind: 'spike', icon: '🌵', cooldown: 900, speed: 520, range: 220, damage: 2 },
     strength: 'Spike shot: hits twice as hard as the water gun, and is safe against spiky mammals. Fast.',
+    waterAbility: { kind: 'tornado', style: 'spike', icon: '🌀', cooldown: 900, speed: 480, range: 240, damage: 2 },
     weakness: 'Short range and a slower reload, so you have to get close.',
   },
   snake: {
@@ -75,6 +86,7 @@ export const CHARACTERS: Record<CharacterId, CharacterConfig> = {
     stompDamage: 1,
     ability: { kind: 'venom', icon: '🧪', cooldown: 950, speed: 560, range: 520, pierce: true },
     strength: 'Venom shot: long range, safe against spiky mammals, and flies straight through a line of small mammals.',
+    waterAbility: { kind: 'tornado', style: 'venom', icon: '🌪️', cooldown: 950, speed: 520, range: 520, pierce: true },
     weakness: 'Low jumps, and still a slowish reload.',
   },
   turtle: {
@@ -89,6 +101,7 @@ export const CHARACTERS: Record<CharacterId, CharacterConfig> = {
     stompDamage: 1,
     ability: { kind: 'water', icon: '💧', cooldown: 320, speed: 520, range: 300, knockback: 240 },
     strength: 'Five hearts and a rapid water gun that pushes mammals back.',
+    waterAbility: { kind: 'wave', icon: '🌊', cooldown: 700, speed: 420, range: 340, knockback: 420, pierce: true, band: 110 },
     weakness: 'Slow, and the water gun is short range.',
   },
   toad: {
@@ -103,6 +116,7 @@ export const CHARACTERS: Record<CharacterId, CharacterConfig> = {
     stompDamage: 2,
     ability: { kind: 'slam', icon: '💥', cooldown: 900, radius: 120 },
     strength: 'Body slam: double damage when bouncing on mammals, with a landing shockwave.',
+    waterAbility: { kind: 'splash', icon: '💦', cooldown: 1000, radius: 220, knockback: 320 },
     weakness: 'Slow, and has no ranged attack, so spiky mammals must be avoided.',
   },
   axolotl: {
@@ -117,6 +131,7 @@ export const CHARACTERS: Record<CharacterId, CharacterConfig> = {
     stompDamage: 1,
     ability: { kind: 'thunder', icon: '⚡', cooldown: 2200, radius: 200 },
     strength: 'Thunder shock hits every mammal around you at once.',
+    waterAbility: { kind: 'zap', icon: '🌩️', cooldown: 2000, radius: 280 },
     weakness: 'Only two hearts and a long recharge.',
   },
   frog: {
@@ -131,6 +146,7 @@ export const CHARACTERS: Record<CharacterId, CharacterConfig> = {
     stompDamage: 1,
     ability: { kind: 'tongue', icon: '👅', cooldown: 450, range: 170 },
     strength: 'Double jump: jump again in mid-air. Quick tongue flick.',
+    waterAbility: { kind: 'tongue', icon: '👅', cooldown: 550, range: 320, band: 110 },
     weakness: 'The tongue has a short reach and only hits one side.',
   },
 };

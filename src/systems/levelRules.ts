@@ -21,8 +21,11 @@ export interface PlatformLike {
 }
 
 export interface LevelLike {
+  width?: number;
+  water?: boolean;
   platforms: PlatformLike[];
   boss: { wakeX: number };
+  checkpoint?: { x: number };
   trampolines?: { x: number }[];
   collectibles?: { id: string; type: string; x: number; y: number }[];
 }
@@ -91,4 +94,14 @@ export function findBadCollectibles(level: LevelLike): string[] {
     if (inside) problems.push(`${c.id}: inside platform x=${inside.x} (at ${c.x},${c.y})`);
   }
   return problems;
+}
+
+/**
+ * Water levels: swimmers can't hide under a ledge, but a boss charging in a straight line can be
+ * wedged by one, so the boss arena must be open water.
+ */
+export function findRocksInWaterArenas(level: LevelLike): { x: number }[] {
+  const from = level.boss.wakeX - ARENA_LEAD;
+  const to = level.width ?? Infinity;
+  return level.platforms.filter((p) => p.x + p.w / 2 > from && p.x - p.w / 2 < to).map((p) => ({ x: p.x }));
 }

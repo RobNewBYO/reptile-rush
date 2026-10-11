@@ -10,4 +10,8 @@ export const THEMES: Record<string, Theme> = {
   outback: { sky: '#f8c98a', ground: 'ground-outback' },
   /** Cooler, greener sky over the usual grass. */
   bush: { sky: '#9fe0d0', ground: 'ground' },
+  /** Sunlit shallows. */
+  reef: { sky: '#3fb4d8', ground: 'seabed' },
+  /** Darker, deeper water. */
+  deep: { sky: '#12507a', ground: 'seabed' },
 };

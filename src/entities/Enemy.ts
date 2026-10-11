@@ -32,8 +32,20 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   private stuckMs = 0;
   private poundQueued = false;
   private poundReadyAt = 0;
+  /** Water level: no gravity, bobbing movement, and bosses that charge in any direction. */
+  private water: boolean;
+  private swimPhase: number;
+  /** Direction of the current charge in water (unit vector). */
+  private vec = { x: -1, y: 0 };
 
-  constructor(scene: Phaser.Scene, x: number, y: number, cfg: EnemyConfig, patrol = 150) {
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    cfg: EnemyConfig,
+    patrol = 150,
+    water = false,
+  ) {
     super(scene, x, y, cfg.texture);
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -43,7 +55,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.homeY = y;
     this.patrol = patrol;
     this.awake = !cfg.boss;
+    this.water = water;
+    this.swimPhase = (x % 97) / 97 * Math.PI * 2;
     this.setCollideWorldBounds(true);
+    if (water) (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
   }
 
   /** True while touching this enemy would not hurt the player. */
@@ -66,7 +81,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     return !this.cfg.boss || (this.awake && this.mode === 'recover');
   }
 
-  tick(time: number, playerX: number) {
+  tick(time: number, playerX: number, playerY = this.y) {
     if (this.defeated) return;
     const body = this.body as Phaser.Physics.Arcade.Body;
     const dt = this.lastTick ? time - this.lastTick : 0;
@@ -74,6 +89,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
     if (time < this.afraidUntil) {
       this.setVelocityX(0);
+      if (this.water) this.setVelocityY(0);
       // A scared boss's attack pattern pauses too, instead of running out while it's frozen.
       if (this.cfg.boss) this.stateUntil += dt;
       this.updateStatusFx();
@@ -88,12 +104,30 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
       if (this.x < this.homeX - this.patrol || body.blocked.left) this.dir = 1;
       else if (this.x > this.homeX + this.patrol || body.blocked.right) this.dir = -1;
       this.setVelocityX(this.dir * this.cfg.speed);
+      if (this.water) {
+        // Bob gently around the spawn height (or hold still if this animal doesn't swim).
+        const sw = this.cfg.swim;
+        if (sw) {
+          const w = (Math.PI * 2) / sw.periodSec;
+          this.setVelocityY(sw.amp * w * Math.cos(w * (time / 1000) + this.swimPhase));
+        } else {
+          this.setVelocityY(0);
+        }
+      }
       this.setFlipX(this.dir > 0);
       return;
     }
 
     if (!this.awake) {
       this.setVelocityX(0);
+      if (this.water) this.setVelocityY(0);
+      return;
+    }
+
+    if (this.water) {
+      this.tickWaterBoss(time, playerX, playerY, body);
+      this.setFlipX(this.dir > 0);
+      this.updateStatusFx();
       return;
     }
 
@@ -125,9 +159,15 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
           // Slammed into the end of the level: that's a real crash, so it's dizzy.
           this.enter('recover', time, this.cfg.dizzyMs ?? 1400);
         } else if (body.blocked.left || body.blocked.right || this.obstacleAhead(body)) {
-          // Bumped (or about to bump) a platform: no dizzy reward, just back off and try again.
-          this.setVelocityX(-this.dir * 140);
-          this.enter('walk', time, 1200);
+          // Stopped by a platform. If it had already run past the player, the player dodged it, so
+          // that's earned. If it was stopped short of the player (hiding under a ledge), it's not.
+          const passedPlayer = this.dir < 0 ? this.x <= playerX : this.x >= playerX;
+          if (passedPlayer) {
+            this.enter('recover', time, this.cfg.dizzyMs ?? 1400);
+          } else {
+            this.setVelocityX(-this.dir * 140);
+            this.enter('walk', time, 1200);
+          }
         } else if (time > this.stateUntil) {
           // Ran its whole charge across open ground (the player dodged it): dizzy.
           this.enter('recover', time, this.cfg.dizzyMs ?? 1400);
@@ -159,6 +199,61 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.updateStatusFx();
   }
 
+  /** Water bosses swim straight at the player and charge along any direction, not just sideways. */
+  private tickWaterBoss(time: number, px: number, py: number, body: Phaser.Physics.Arcade.Body) {
+    const dx = px - this.x;
+    const dy = py - this.y;
+    const len = Math.hypot(dx, dy) || 1;
+    switch (this.mode) {
+      case 'walk':
+      case 'pound': {
+        const sp = this.cfg.speed;
+        this.setVelocity((dx / len) * sp, (dy / len) * sp);
+        this.dir = dx < 0 ? -1 : 1;
+        if (time > this.stateUntil) this.enter('telegraph', time, 700);
+        break;
+      }
+      case 'telegraph':
+        // Wind-up: hold still and flash red; the charge heads where the player was at the end of it.
+        this.setVelocity(0, 0);
+        this.dir = dx < 0 ? -1 : 1;
+        this.setTint(Math.floor(time / 90) % 2 ? 0xff6666 : 0xffffff);
+        if (time > this.stateUntil) {
+          this.vec = { x: dx / len, y: dy / len };
+          this.enter('charge', time, 900);
+        }
+        break;
+      case 'charge': {
+        this.clearTint();
+        const cs = this.cfg.chargeSpeed ?? 300;
+        this.setVelocity(this.vec.x * cs, this.vec.y * cs);
+        const side = body.blocked.left || body.blocked.right;
+        // Boss arenas are open water (checked by `npm run check:levels`), so a side block away from the
+        // end of the level is just a catch on the seabed's tile seams, not an obstacle: keep charging.
+        // Resting on the seabed while charging sideways isn't a crash; driving into it is.
+        const crashed =
+          (body.blocked.down && this.vec.y > 0.3) ||
+          (body.blocked.up && this.vec.y < -0.3) ||
+          (side && this.hitLevelEdge(body));
+        if (crashed) {
+          this.enter('recover', time, this.cfg.dizzyMs ?? 1400);
+        } else if (time > this.stateUntil) {
+          // Swam its whole charge through open water (the player dodged it): dizzy.
+          this.enter('recover', time, this.cfg.dizzyMs ?? 1400);
+        }
+        break;
+      }
+      case 'recover':
+        this.setVelocity(0, 0);
+        this.setAlpha(Math.floor(time / 200) % 2 ? 0.7 : 1);
+        if (time > this.stateUntil) {
+          this.setAlpha(1);
+          this.enter('walk', time, 2000);
+        }
+        break;
+    }
+  }
+
   /** A solid thing (platform) right in front of the boss, even if it hasn't touched it yet. */
   private obstacleAhead(body: Phaser.Physics.Arcade.Body): boolean {
     const x = this.dir > 0 ? body.right + 1 : body.left - 29;
@@ -179,6 +274,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
    * under a low platform), it gives up walking and ground-pounds instead.
    */
   private trackStuck(body: Phaser.Physics.Arcade.Body, dt: number) {
+    if (this.water) return; // no ground to pound in the water
     const wedged =
       (this.mode === 'walk' || this.mode === 'charge') &&
       (body.blocked.left || body.blocked.right) &&
@@ -193,6 +289,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   /** Ask for a ground pound at the next safe moment (used by the level when someone is camping). */
   requestPound() {
+    if (this.water) return;
     this.poundQueued = true;
   }
 
@@ -219,11 +316,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.setVelocityX(0);
   }
 
-  /** Brief push-back (water gun). Ignored by bosses. */
-  knock(now: number, ms: number, vx: number) {
+  /** Brief push-back (water gun, wave, splash). Ignored by bosses. */
+  knock(now: number, ms: number, vx: number, vy = 0) {
     if (this.defeated || this.cfg.boss) return;
     this.knockUntil = now + ms;
     this.setVelocityX(vx);
+    if (this.water) this.setVelocityY(vy);
   }
 
   /** Back to the spawn point (used if an enemy ever leaves the level). */
