@@ -203,6 +203,81 @@ export class BootScene extends Phaser.Scene {
     g.generateTexture('shot', 20, 20);
     g.clear();
 
+    // ---- Australian wildlife (all face left) ----
+
+    // Bilby: long pink ears, pointed snout, black-and-white tail
+    g.fillStyle(0x9e9e9e).fillEllipse(34, 30, 42, 24);
+    g.fillStyle(0x9e9e9e).fillCircle(14, 22, 10);
+    g.fillStyle(0xbdbdbd).fillEllipse(8, 24, 14, 8);
+    g.fillStyle(0x9e9e9e).fillEllipse(14, 6, 7, 20).fillEllipse(23, 7, 7, 20);
+    g.fillStyle(0xf8bbd0).fillEllipse(14, 6, 3, 15).fillEllipse(23, 7, 3, 15);
+    g.fillStyle(0x424242).fillRect(46, 28, 18, 5);
+    g.fillStyle(0xffffff).fillRect(58, 26, 8, 8);
+    g.fillStyle(0x000000).fillCircle(11, 20, 2).fillCircle(2, 25, 2);
+    g.fillStyle(0x757575).fillRect(24, 40, 7, 8).fillRect(42, 40, 7, 8);
+    g.generateTexture('bilby', 68, 48);
+    g.clear();
+
+    // Echidna (spiky!): tan spines over a dark body, long thin snout
+    g.fillStyle(0x4e342e).fillEllipse(40, 30, 54, 28);
+    g.lineStyle(3, 0xd7b98a);
+    for (let i = 0; i < 11; i++) {
+      const a = Math.PI + (i / 10) * Math.PI;
+      g.lineBetween(40 + Math.cos(a) * 18, 30 + Math.sin(a) * 11, 40 + Math.cos(a) * 32, 30 + Math.sin(a) * 24);
+    }
+    g.fillStyle(0x6d4c41).fillCircle(12, 32, 8);
+    g.lineStyle(4, 0x3e2723).lineBetween(8, 32, -2, 38);
+    g.fillStyle(0x000000).fillCircle(10, 29, 2);
+    g.fillStyle(0x3e2723).fillRect(26, 40, 7, 6).fillRect(48, 40, 7, 6);
+    g.generateTexture('echidna', 74, 48);
+    g.clear();
+
+    // Possum: grey, round ears, pink nose, curled bushy tail
+    g.fillStyle(0xa1887f).fillEllipse(34, 30, 44, 26);
+    g.fillStyle(0xa1887f).fillCircle(14, 24, 11);
+    g.fillStyle(0x6d4c41).fillCircle(8, 12, 6).fillCircle(20, 11, 6);
+    g.fillStyle(0xf8bbd0).fillCircle(8, 12, 3).fillCircle(20, 11, 3);
+    g.fillStyle(0xf48fb1).fillCircle(3, 28, 3);
+    g.fillStyle(0x000000).fillCircle(10, 22, 2);
+    g.fillStyle(0x8d6e63).fillEllipse(58, 22, 16, 30);
+    g.fillStyle(0x5d4037).fillRect(24, 40, 7, 8).fillRect(42, 40, 7, 8);
+    g.generateTexture('possum', 70, 48);
+    g.clear();
+
+    // Dingo boss: sandy, pointed ears, bushy tail, white socks
+    g.fillStyle(0xd9a05b).fillEllipse(100, 56, 100, 44);
+    g.fillStyle(0xd9a05b).fillCircle(40, 46, 24);
+    g.fillStyle(0xd9a05b).fillTriangle(24, 28, 30, 2, 44, 24).fillTriangle(40, 24, 54, 2, 60, 30);
+    g.fillStyle(0xf3d9a8).fillEllipse(24, 56, 30, 18);
+    g.fillStyle(0xd9a05b).fillEllipse(150, 38, 22, 52);
+    g.fillStyle(0xffffff).fillCircle(150, 18, 8);
+    g.fillStyle(0x000000).fillCircle(30, 42, 4).fillCircle(8, 54, 4);
+    g.fillStyle(0xd9a05b).fillRect(62, 70, 12, 18).fillRect(120, 70, 12, 18);
+    g.fillStyle(0xffffff).fillRect(62, 82, 12, 8).fillRect(120, 82, 12, 8);
+    g.generateTexture('dingo', 172, 90);
+    g.clear();
+
+    // Kangaroo boss: tall and upright, big tail, long ears, pouch
+    g.fillStyle(0xbf6e3b).fillEllipse(108, 112, 70, 22);
+    g.fillStyle(0xbf6e3b).fillEllipse(76, 78, 66, 82);
+    g.fillStyle(0xe6a874).fillEllipse(66, 82, 34, 52);
+    g.fillStyle(0xbf6e3b).fillCircle(44, 32, 20);
+    g.fillStyle(0xbf6e3b).fillEllipse(30, 34, 28, 14);
+    g.fillStyle(0xbf6e3b).fillEllipse(40, 4, 8, 26).fillEllipse(54, 6, 8, 26);
+    g.fillStyle(0xf8bbd0).fillEllipse(40, 6, 3, 18).fillEllipse(54, 8, 3, 18);
+    g.fillStyle(0x000000).fillCircle(38, 28, 3).fillCircle(20, 36, 3);
+    g.fillStyle(0xbf6e3b).fillRect(34, 56, 24, 10);
+    g.fillStyle(0x8a4b25).fillRect(56, 100, 40, 14).fillRect(36, 112, 34, 14);
+    g.generateTexture('kangaroo', 150, 130);
+    g.clear();
+
+    // Outback ground: red earth with an ochre top
+    g.fillStyle(0xa8421f).fillRect(0, 0, 64, 64);
+    g.fillStyle(0xe0954a).fillRect(0, 0, 64, 12);
+    g.fillStyle(0x8a3318).fillCircle(14, 34, 4).fillCircle(44, 48, 5).fillCircle(52, 28, 3);
+    g.generateTexture('ground-outback', 64, 64);
+    g.clear();
+
     // Heart
     g.fillStyle(0xe53935).fillCircle(10, 10, 8).fillCircle(22, 10, 8);
     g.fillTriangle(2, 13, 30, 13, 16, 29);

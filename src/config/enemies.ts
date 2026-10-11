@@ -19,6 +19,10 @@ export interface EnemyConfig {
 export const ENEMIES: Record<string, EnemyConfig> = {
   mouse: { id: 'mouse', texture: 'mouse', hp: 1, speed: 60 },
   hedgehog: { id: 'hedgehog', texture: 'hedgehog', hp: 1, speed: 45, spiky: true },
+  // Australian wildlife
+  bilby: { id: 'bilby', texture: 'bilby', hp: 1, speed: 75 },
+  possum: { id: 'possum', texture: 'possum', hp: 1, speed: 55 },
+  echidna: { id: 'echidna', texture: 'echidna', hp: 1, speed: 40, spiky: true },
   badger: {
     id: 'badger',
     height: 90,
@@ -62,5 +66,27 @@ export const ENEMIES: Record<string, EnemyConfig> = {
     boss: true,
     icon: '🐻',
     dizzyMs: 1500,
+  },
+  dingo: {
+    id: 'dingo',
+    height: 90,
+    texture: 'dingo',
+    hp: 6,
+    speed: 130,
+    chargeSpeed: 500,
+    boss: true,
+    icon: '🐕',
+    dizzyMs: 1400,
+  },
+  kangaroo: {
+    id: 'kangaroo',
+    height: 130,
+    texture: 'kangaroo',
+    hp: 8,
+    speed: 100,
+    chargeSpeed: 440,
+    boss: true,
+    icon: '🦘',
+    dizzyMs: 1300,
   },
 };

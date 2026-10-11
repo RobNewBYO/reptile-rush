@@ -83,9 +83,11 @@ export class LevelSelectScene extends Phaser.Scene {
         return;
       }
 
+      // Levels share the row; squeeze the spacing so four fit even on a 4:3 iPad.
+      const step = ep.levels.length > 1 ? Math.min(150, (width - 330) / (ep.levels.length - 1)) : 150;
       ep.levels.forEach((id, i) => {
         const open = epUnlocked && (i === 0 || Save.isComplete(ep.levels[i - 1]));
-        const x = 260 + i * 150;
+        const x = 260 + i * step;
         const btn = this.add
           .circle(x, y - 12, 52, open ? 0xffffff : 0x666666, open ? 0.95 : 0.6)
           .setStrokeStyle(6, open ? 0xffd54f : 0x444444);

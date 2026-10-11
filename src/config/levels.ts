@@ -3,6 +3,8 @@ export interface LevelConfig {
   id: string;
   width: number;
   height: number;
+  /** Look of the level (see themes.ts). Defaults to the meadow. */
+  theme?: string;
   platforms: { x: number; y: number; w: number }[];
   enemies: { type: string; x: number; patrol?: number }[];
   boss: { type: string; x: number; wakeX: number };

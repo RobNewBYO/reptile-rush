@@ -3,6 +3,7 @@ import type { Ability } from '../config/characters';
 import { ENEMIES } from '../config/enemies';
 import { getForm, type FormConfig } from '../config/forms';
 import type { LevelConfig } from '../config/levels';
+import { THEMES } from '../config/themes';
 import { Enemy } from '../entities/Enemy';
 import { Controls } from '../systems/Controls';
 import { Save } from '../systems/Save';
@@ -84,11 +85,12 @@ export class LevelScene extends Phaser.Scene {
 
   create() {
     const { width, height } = this.level;
-    this.cameras.main.setBackgroundColor('#8ed1fc').fadeIn(300);
+    const theme = THEMES[this.level.theme ?? 'meadow'] ?? THEMES.meadow;
+    this.cameras.main.setBackgroundColor(theme.sky).fadeIn(300);
     this.physics.world.setBounds(0, 0, width, height + 200);
 
     const solids = this.physics.add.staticGroup();
-    for (let x = 0; x < width; x += 64) solids.create(x + 32, height - 32, 'ground');
+    for (let x = 0; x < width; x += 64) solids.create(x + 32, height - 32, theme.ground);
     for (const p of this.level.platforms) {
       const plat = solids.create(p.x, p.y, 'platform') as Phaser.Physics.Arcade.Sprite;
       plat.setDisplaySize(p.w, 24).refreshBody();
@@ -119,10 +121,13 @@ export class LevelScene extends Phaser.Scene {
     this.physics.add.collider(this.shots, solids, (s) => (s as Phaser.GameObjects.GameObject).destroy());
 
     // Trampolines: walk onto one for a big assisted jump.
-    const pads = this.physics.add.staticGroup();
+    // Dynamic-but-immovable bodies, not static ones: bosses probe for static obstacles ahead of them,
+    // and a spring pad on the floor must never read as a wall.
+    const pads = this.physics.add.group({ allowGravity: false, immovable: true });
     for (const t of this.level.trampolines ?? []) {
       const pad = pads.create(t.x, LevelScene.FLOOR_TOP - 14, 'trampoline') as Phaser.Physics.Arcade.Sprite;
-      pad.setDepth(5).setData('power', t.power ?? TRAMPOLINE_POWER).refreshBody();
+      pad.setDepth(5).setData('power', t.power ?? TRAMPOLINE_POWER);
+      (pad.body as Phaser.Physics.Arcade.Body).setAllowGravity(false).setImmovable(true);
     }
     this.physics.add.overlap(this.player, pads, (_p, pad) => this.onPad(pad as Phaser.Physics.Arcade.Sprite));
 
@@ -595,6 +600,7 @@ export class LevelScene extends Phaser.Scene {
     shot.setData('kind', a.kind);
     shot.setData('knockback', a.knockback ?? 0);
     shot.setData('damage', a.damage ?? 1);
+    shot.setData('pierce', a.pierce ?? false);
     (shot.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
     shot.setVelocityX(this.facing * (a.speed ?? 500));
     this.time.delayedCall(((a.range ?? 300) / (a.speed ?? 500)) * 1000, () => shot.active && shot.destroy());
@@ -606,7 +612,9 @@ export class LevelScene extends Phaser.Scene {
     const dir = Math.sign(shot.body!.velocity.x) || 1;
     const kb = (shot.getData('knockback') as number) ?? 0;
     const damage = (shot.getData('damage') as number) ?? 1;
-    shot.destroy();
+    // Piercing shots carry on through small mammals; a boss always stops them.
+    const pierces = (shot.getData('pierce') as boolean) && !enemy.cfg.boss;
+    if (!pierces) shot.destroy();
     if (this.zapEnemy(enemy, now, damage) || enemy.defeated) return;
     if (kb > 0) enemy.knock(now, 260, dir * kb);
   }

@@ -19,6 +19,8 @@ export interface Ability {
   knockback?: number;
   /** Hit points removed per hit; defaults to 1. */
   damage?: number;
+  /** Projectile keeps flying through small mammals it defeats (bosses always stop it). */
+  pierce?: boolean;
 }
 
 export interface CharacterConfig {
@@ -71,9 +73,9 @@ export const CHARACTERS: Record<CharacterId, CharacterConfig> = {
     jumpVelocity: 450,
     doubleJump: false,
     stompDamage: 1,
-    ability: { kind: 'venom', icon: '🧪', cooldown: 1200, speed: 560, range: 520 },
-    strength: 'Venom shot: long-range, safe against spiky mammals.',
-    weakness: 'Low jumps and a slow reload.',
+    ability: { kind: 'venom', icon: '🧪', cooldown: 950, speed: 560, range: 520, pierce: true },
+    strength: 'Venom shot: long range, safe against spiky mammals, and flies straight through a line of small mammals.',
+    weakness: 'Low jumps, and still a slowish reload.',
   },
   turtle: {
     id: 'turtle',
