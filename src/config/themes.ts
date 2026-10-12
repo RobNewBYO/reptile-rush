@@ -2,6 +2,8 @@
 export interface Theme {
   sky: string;
   ground: string;
+  /** Dark backdrop: give the player a soft pale halo so dark animals (the snake) stay visible. */
+  glow?: boolean;
 }
 
 export const THEMES: Record<string, Theme> = {
@@ -13,5 +15,5 @@ export const THEMES: Record<string, Theme> = {
   /** Sunlit shallows. */
   reef: { sky: '#3fb4d8', ground: 'seabed' },
   /** Darker, deeper water. */
-  deep: { sky: '#12507a', ground: 'seabed' },
+  deep: { sky: '#12507a', ground: 'seabed', glow: true },
 };

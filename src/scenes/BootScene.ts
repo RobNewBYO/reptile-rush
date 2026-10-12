@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { CHARACTERS } from '../config/characters';
 import { ALL_LEVEL_IDS } from '../config/episodes';
 
 /** Generates placeholder textures. Swap for real art by loading atlases under the same keys. */
@@ -9,6 +10,10 @@ export class BootScene extends Phaser.Scene {
 
   preload() {
     for (const id of ALL_LEVEL_IDS) this.load.json(id, `levels/${id}.json`);
+    // Real character artwork replaces the generated placeholder shape of the same name.
+    for (const ch of Object.values(CHARACTERS)) {
+      if (ch.art) this.load.image(ch.texture, ch.art.file);
+    }
   }
 
   create() {
@@ -62,26 +67,6 @@ export class BootScene extends Phaser.Scene {
     g.generateTexture('fox', 160, 90);
     g.clear();
 
-    // Lizard (placeholder, faces right)
-    g.fillStyle(0x4caf50).fillEllipse(70, 60, 80, 34);
-    g.fillStyle(0x4caf50).fillCircle(116, 52, 18);
-    g.fillStyle(0x4caf50).fillTriangle(30, 60, 0, 78, 34, 70);
-    g.fillStyle(0x388e3c).fillRect(50, 70, 10, 16).fillRect(86, 70, 10, 16);
-    g.fillStyle(0xffffff).fillCircle(122, 46, 6);
-    g.fillStyle(0x000000).fillCircle(124, 46, 3);
-    g.generateTexture('lizard', 140, 92);
-    g.clear();
-
-    // Snake (placeholder, faces right)
-    g.fillStyle(0xffb300);
-    for (let i = 0; i < 9; i++) g.fillCircle(14 + i * 13, 64 - Math.sin(i * 0.9) * 16, 12 - i * 0.2);
-    g.fillStyle(0xffb300).fillCircle(130, 40, 16);
-    g.fillStyle(0xffffff).fillCircle(134, 36, 6);
-    g.fillStyle(0x000000).fillCircle(136, 36, 3);
-    g.lineStyle(3, 0xe53935).lineBetween(144, 44, 156, 44);
-    g.generateTexture('snake', 160, 92);
-    g.clear();
-
     // Hedgehog (faces left): spiky back
     g.fillStyle(0x6d4c41);
     for (let i = 0; i < 7; i++) g.fillTriangle(14 + i * 6, 10, 20 + i * 6, -2 + 8, 26 + i * 6, 10);
@@ -113,18 +98,6 @@ export class BootScene extends Phaser.Scene {
     g.fillStyle(0x000000).fillCircle(26, 52, 4).fillCircle(8, 70, 5);
     g.fillStyle(0x3e2723).fillRect(52, 108, 22, 14).fillRect(116, 108, 22, 14);
     g.generateTexture('bear', 180, 124);
-    g.clear();
-
-    // Turtle (placeholder, faces right)
-    g.fillStyle(0x66bb6a).fillTriangle(16, 64, 2, 74, 26, 74);
-    g.fillStyle(0x66bb6a).fillRect(32, 70, 16, 16).fillRect(80, 70, 16, 16);
-    g.fillStyle(0x2e7d32).fillEllipse(64, 54, 94, 64);
-    g.fillStyle(0x1b5e20).fillEllipse(64, 52, 60, 38);
-    g.fillStyle(0xa5d6a7).fillCircle(64, 52, 8).fillCircle(44, 54, 6).fillCircle(84, 54, 6);
-    g.fillStyle(0x66bb6a).fillCircle(116, 58, 17);
-    g.fillStyle(0xffffff).fillCircle(122, 53, 5);
-    g.fillStyle(0x000000).fillCircle(124, 53, 2.5);
-    g.generateTexture('turtle', 140, 92);
     g.clear();
 
     // Toad (placeholder, faces right): warty, round, big yellow eyes

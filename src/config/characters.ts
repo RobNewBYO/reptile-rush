@@ -35,7 +35,16 @@ export interface CharacterConfig {
   id: CharacterId;
   name: string;
   texture: string;
-  /** Hitbox in texture pixels, bottom-centred. */
+  /**
+   * Real artwork, loaded under the `texture` key at boot (see scripts/build-art.sh). Characters
+   * without it use the generated placeholder shape. All art faces right.
+   */
+  art?: {
+    file: string;
+    /** Display size per texture pixel: the art is a sharp ~3x texture, shown smaller than that. */
+    scale: number;
+  };
+  /** Hitbox in design pixels (at full size, before the life-stage scale), bottom-centred. */
   body: { w: number; h: number };
   maxHearts: number;
   speed: number;
@@ -63,7 +72,8 @@ export const CHARACTERS: Record<CharacterId, CharacterConfig> = {
     id: 'lizard',
     name: 'Lizard',
     texture: 'lizard',
-    body: { w: 110, h: 60 },
+    art: { file: 'art/lizard.png', scale: 0.42 },
+    body: { w: 150, h: 46 },
     maxHearts: 3,
     speed: 270,
     jumpVelocity: 540,
@@ -78,7 +88,8 @@ export const CHARACTERS: Record<CharacterId, CharacterConfig> = {
     id: 'snake',
     name: 'Snake',
     texture: 'snake',
-    body: { w: 120, h: 56 },
+    art: { file: 'art/snake.png', scale: 0.4 },
+    body: { w: 156, h: 62 },
     maxHearts: 3,
     speed: 235,
     jumpVelocity: 450,
@@ -93,7 +104,8 @@ export const CHARACTERS: Record<CharacterId, CharacterConfig> = {
     id: 'turtle',
     name: 'Turtle',
     texture: 'turtle',
-    body: { w: 100, h: 56 },
+    art: { file: 'art/turtle.png', scale: 0.4 },
+    body: { w: 130, h: 66 },
     maxHearts: 5,
     speed: 170,
     jumpVelocity: 470,

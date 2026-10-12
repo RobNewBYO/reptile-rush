@@ -34,6 +34,8 @@ export class LevelScene extends Phaser.Scene {
   private checkpointReached = false;
   private flag?: Phaser.GameObjects.Text;
   private water = false;
+  /** Pale silhouette behind the player on dark levels. */
+  private halo?: Phaser.GameObjects.Sprite;
 
   private maxHearts = EGG_HEARTS;
   private hearts = EGG_HEARTS;
@@ -120,6 +122,13 @@ export class LevelScene extends Phaser.Scene {
     this.applyFormToPlayer();
     this.physics.add.collider(this.player, solids);
     this.physics.add.collider(this.player, floor);
+
+    // Dark backdrop (the deep water): a slightly larger, pale, see-through copy behind the player.
+    this.halo = undefined;
+    if (theme.glow) {
+      this.halo = this.add.sprite(0, 0, this.form.texture).setDepth(this.player.depth - 1);
+      this.halo.setTint(0xcfefff).setTintMode(Phaser.TintModes.FILL);
+    }
 
     // Group defaults override per-sprite settings, so world-bounds collision and gravity are set here.
     this.enemies = this.physics.add.group({ collideWorldBounds: true, allowGravity: !this.water });
@@ -941,6 +950,17 @@ export class LevelScene extends Phaser.Scene {
 
     // Blink while invulnerable.
     this.player.setAlpha(time < this.invulnUntil && Math.floor(time / 100) % 2 ? 0.3 : 1);
+
+    if (this.halo) {
+      const p = this.player;
+      if (this.halo.texture.key !== p.texture.key) this.halo.setTexture(p.texture.key);
+      this.halo
+        .setPosition(p.x, p.y)
+        .setFlipX(p.flipX)
+        .setAngle(p.angle)
+        .setScale(p.scaleX * 1.1, p.scaleY * 1.18)
+        .setAlpha(p.alpha * 0.4);
+    }
 
     if (this.form.rolls) this.player.angle += body.velocity.x * 0.02;
 

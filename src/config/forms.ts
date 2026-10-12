@@ -8,7 +8,7 @@ import { applyUpgrades, type UpgradeLevels } from './upgrades';
 export interface FormConfig {
   id: string;
   texture: string;
-  /** Sprite scale applied to the texture. */
+  /** Sprite scale applied to the texture (life stage x the art's own scale). */
   scale: number;
   /** Hitbox in texture pixels, bottom-centred. */
   body: { w: number; h: number };
@@ -46,11 +46,14 @@ export function getForm(
 ): FormConfig {
   if (formId === 'egg') return EGG;
   const ch = applyUpgrades(CHARACTERS[characterId ?? 'lizard'], upgrades);
+  // Real artwork is a larger texture shown at `art.scale`; the hitbox is given in display pixels,
+  // so convert it to texture pixels (the physics body is sized before the sprite is scaled).
+  const k = ch.art?.scale ?? 1;
   return {
     id: formId,
     texture: ch.texture,
-    scale: STAGE_SCALE[formId] ?? STAGE_SCALE.hatchling,
-    body: ch.body,
+    scale: (STAGE_SCALE[formId] ?? STAGE_SCALE.hatchling) * k,
+    body: { w: ch.body.w / k, h: ch.body.h / k },
     speed: ch.speed,
     jumpVelocity: ch.jumpVelocity,
     rolls: false,
