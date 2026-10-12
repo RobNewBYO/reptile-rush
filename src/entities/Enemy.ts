@@ -355,13 +355,16 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.updateStatusFx();
   }
 
-  /** Returns true if the hit landed. `damage` is how many hit points it removes. */
-  hit(time: number, damage = 1): boolean {
+  /**
+   * Returns true if the hit landed. `damage` is how many hit points it removes. `sweep` (px) makes a
+   * defeated enemy be carried that far instead of floating up: the turtle's wave and the toad's splash.
+   */
+  hit(time: number, damage = 1, sweep?: { x: number; y: number }): boolean {
     if (!this.vulnerable || time < this.invulnUntil) return false;
     this.hp -= damage;
     this.invulnUntil = time + (this.cfg.boss ? 900 : 0);
     if (this.hp <= 0) {
-      this.defeat();
+      this.defeat(sweep);
     } else {
       this.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
       this.scene.time.delayedCall(120, () => {
@@ -371,7 +374,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     return true;
   }
 
-  private defeat() {
+  private defeat(sweep?: { x: number; y: number }) {
     this.defeated = true;
     this.statusFx?.destroy();
     this.statusFx = undefined;
@@ -384,10 +387,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.scene.tweens.add({ targets: star, y: star.y - 70, alpha: 0, duration: 800 });
     this.scene.tweens.add({
       targets: this,
-      angle: 360,
-      y: this.y - 60,
+      angle: sweep ? 540 : 360,
+      x: sweep ? this.x + sweep.x : this.x,
+      y: sweep ? this.y + sweep.y : this.y - 60,
       alpha: 0,
-      duration: this.cfg.boss ? 1200 : 600,
+      duration: this.cfg.boss ? 1200 : sweep ? 750 : 600,
       onComplete: () => {
         this.emit('gone');
         this.destroy();

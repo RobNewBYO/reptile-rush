@@ -152,7 +152,11 @@ export class LevelScene extends Phaser.Scene {
     this.physics.add.overlap(this.shots, this.enemies, (s, e) =>
       this.onShotHit(s as Phaser.Physics.Arcade.Sprite, e as unknown as Enemy),
     );
-    this.physics.add.collider(this.shots, solids, (s) => (s as Phaser.GameObjects.GameObject).destroy());
+    // On land a ledge stops a shot. In water the tall tornado and wave would die on any thin coral
+    // that touched their height, so there they flow straight through it.
+    if (!this.water) {
+      this.physics.add.collider(this.shots, solids, (s) => (s as Phaser.GameObjects.GameObject).destroy());
+    }
 
     // Trampolines: walk onto one for a big assisted jump.
     // Dynamic-but-immovable bodies, not static ones: bosses probe for static obstacles ahead of them,
@@ -362,6 +366,8 @@ export class LevelScene extends Phaser.Scene {
     const next = this.currentForm(this.form.id);
     if (!this.form.character || next.character?.id === this.form.character.id) return;
 
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    const feetY = body.bottom; // remember where the feet are, so a different-sized animal stands there
     const frac = this.hearts / this.maxHearts;
     this.form = next;
     this.maxHearts = next.character!.maxHearts;
@@ -372,6 +378,10 @@ export class LevelScene extends Phaser.Scene {
     this.bonkUntil = 0;
 
     this.applyFormToPlayer();
+    // The new animal has a different height. Left alone, a taller one ends up partly inside the
+    // floor, which the physics treats as tunnelling and lets it fall straight through. Put its feet
+    // back on the same line (body.reset also refreshes the physics body to the new size).
+    body.reset(this.player.x, feetY - this.player.displayHeight / 2);
     this.badge?.setTexture(next.texture);
     this.badge?.setScale(Math.min(0.42, 56 / this.badge.width));
     this.controls.setActionIcon(this.actionIcon());
@@ -443,13 +453,32 @@ export class LevelScene extends Phaser.Scene {
   }
 
   /** Ranged / area damage: bosses only take it while dizzy, otherwise it clinks off. */
-  private zapEnemy(enemy: Enemy, now: number, damage = 1): boolean {
+  private zapEnemy(enemy: Enemy, now: number, damage = 1, sweep?: { x: number; y: number }): boolean {
     if (enemy.defeated) return false;
     if (enemy.cfg.boss && !enemy.vulnerable) {
       this.clink(enemy.x, enemy.y - enemy.displayHeight / 2, now);
       return false;
     }
-    return enemy.hit(now, damage);
+    return enemy.hit(now, damage, sweep);
+  }
+
+  /**
+   * Which way an attack goes. On land: the way you face. In water, enemies are anywhere vertically,
+   * so holding up or down while you fire aims there (and up/down plus a side gives a diagonal).
+   */
+  private aimVector(): { x: number; y: number } {
+    if (!this.water) return { x: this.facing, y: 0 };
+    const c = this.controls.state;
+    const vy = c.jump ? -1 : c.down ? 1 : 0;
+    const vx = c.left ? -1 : c.right ? 1 : vy !== 0 ? 0 : this.facing;
+    const len = Math.hypot(vx, vy) || 1;
+    return { x: vx / len, y: vy / len };
+  }
+
+  /** Point a right-facing sprite along `aim`, keeping it upright when it points left. */
+  private orient(sprite: Phaser.GameObjects.Sprite, aim: { x: number; y: number }) {
+    if (aim.x < 0) sprite.setFlipX(true).setRotation(Math.atan2(-aim.y, -aim.x));
+    else sprite.setRotation(Math.atan2(aim.y, aim.x));
   }
 
   private hurt(fromX: number) {
@@ -706,23 +735,30 @@ export class LevelScene extends Phaser.Scene {
    */
   private fireShot(a: Ability) {
     const k = a.kind;
+    const aim = this.aimVector();
     const spikeLook = k === 'spike' || (k === 'tornado' && a.style === 'spike');
     const venomLook = k === 'venom' || (k === 'tornado' && a.style === 'venom');
     Sfx.play(spikeLook ? 'spike' : venomLook ? 'venom' : 'water');
     const texture = k === 'spike' ? 'spike' : k === 'tornado' ? 'tornado' : k === 'wave' ? 'wave' : 'shot';
+    const big = k === 'tornado' || k === 'wave';
     const shot = this.shots.create(
-      this.player.x + this.facing * 40,
-      this.player.y - (k === 'tornado' || k === 'wave' ? 0 : 4),
+      this.player.x + aim.x * 40,
+      this.player.y + aim.y * 40 - (big ? 0 : 4),
       texture,
     ) as Phaser.Physics.Arcade.Sprite;
     shot.setDepth(40);
+    const body = shot.body as Phaser.Physics.Arcade.Body;
     if (k === 'spike') {
-      shot.setFlipX(this.facing < 0);
+      this.orient(shot, aim);
     } else if (k === 'tornado') {
       shot.setTint(spikeLook ? 0xffa726 : 0x76ff03).setScale(0.9);
-      this.tweens.add({ targets: shot, angle: this.facing * 360, duration: 500, repeat: -1 });
+      const spin = this.tweens.add({ targets: shot, angle: 360, duration: 500, repeat: -1 });
+      shot.once('destroy', () => spin.remove());
     } else if (k === 'wave') {
-      shot.setTint(0x4fc3f7).setFlipX(this.facing < 0);
+      // White-ish so it stands out against the water. A wave sent up or down lies on its side.
+      shot.setTint(0xe3f6ff);
+      this.orient(shot, aim);
+      if (Math.abs(aim.y) > Math.abs(aim.x)) body.setSize(120, 80);
     } else {
       shot.setTint(venomLook ? 0x76ff03 : 0x4fc3f7).setScale(venomLook ? 1.1 : 0.8);
     }
@@ -731,23 +767,29 @@ export class LevelScene extends Phaser.Scene {
     shot.setData('knockMs', k === 'wave' ? 900 : 260);
     shot.setData('damage', a.damage ?? 1);
     shot.setData('pierce', a.pierce ?? false);
-    (shot.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
-    shot.setVelocityX(this.facing * (a.speed ?? 500));
-    this.time.delayedCall(((a.range ?? 300) / (a.speed ?? 500)) * 1000, () => shot.active && shot.destroy());
+    body.setAllowGravity(false);
+    const sp = a.speed ?? 500;
+    shot.setVelocity(aim.x * sp, aim.y * sp);
+    this.time.delayedCall(((a.range ?? 300) / sp) * 1000, () => shot.active && shot.destroy());
   }
 
   private onShotHit(shot: Phaser.Physics.Arcade.Sprite, enemy: Enemy) {
     if (!shot.active || enemy.defeated) return;
     const now = this.time.now;
-    const dir = Math.sign(shot.body!.velocity.x) || 1;
+    const v = shot.body!.velocity;
+    const speed = Math.hypot(v.x, v.y) || 1;
+    const dirX = v.x / speed;
+    const dirY = v.y / speed;
     const kb = (shot.getData('knockback') as number) ?? 0;
     const knockMs = (shot.getData('knockMs') as number) ?? 260;
     const damage = (shot.getData('damage') as number) ?? 1;
     // Piercing shots carry on through small mammals; a boss always stops them.
     const pierces = (shot.getData('pierce') as boolean) && !enemy.cfg.boss;
     if (!pierces) shot.destroy();
-    if (this.zapEnemy(enemy, now, damage) || enemy.defeated) return;
-    if (kb > 0) enemy.knock(now, knockMs, dir * kb);
+    // The turtle's wave carries a defeated enemy a long way along with it ("washes them away").
+    const sweep = shot.getData('kind') === 'wave' ? { x: dirX * 380, y: dirY * 380 } : undefined;
+    if (this.zapEnemy(enemy, now, damage, sweep) || enemy.defeated) return;
+    if (kb > 0) enemy.knock(now, knockMs, dirX * kb, dirY * kb);
   }
 
   /** Lizard: every nearby mammal freezes with fear. */
@@ -784,12 +826,14 @@ export class LevelScene extends Phaser.Scene {
   }
 
   private ring(x: number, y: number, radius: number, color: number) {
-    const r = this.add.circle(x, y, 12, color, 0.25).setStrokeStyle(6, color).setDepth(40);
+    // Grow the radius (not the scale) so the white edge keeps the same thickness at any size.
+    const r = this.add.circle(x, y, 12, color, 0.3).setStrokeStyle(7, 0xffffff, 0.95).setDepth(40);
     this.tweens.add({
       targets: r,
-      scale: radius / 12,
+      radius,
       alpha: 0,
-      duration: 380,
+      duration: 420,
+      ease: 'Quad.Out',
       onComplete: () => r.destroy(),
     });
   }
@@ -797,13 +841,15 @@ export class LevelScene extends Phaser.Scene {
   /** Frog: a quick tongue flick straight ahead. */
   private tongue(a: Ability, now: number) {
     Sfx.play('tongue');
+    const aim = this.aimVector();
     const range = a.range ?? 170;
     const band = a.band ?? 70;
-    const y = this.player.y - 8;
-    const startX = this.player.x + this.facing * 30;
+    const sx = this.player.x + aim.x * 30;
+    const sy = this.player.y - 8 + aim.y * 30;
     const line = this.add
-      .rectangle(startX, y, 8, band > 80 ? 18 : 10, 0xff6f91)
-      .setOrigin(this.facing > 0 ? 0 : 1, 0.5)
+      .rectangle(sx, sy, 8, band > 80 ? 18 : 10, 0xff6f91)
+      .setOrigin(0, 0.5)
+      .setRotation(Math.atan2(aim.y, aim.x))
       .setDepth(50);
     this.tweens.add({
       targets: line,
@@ -814,28 +860,51 @@ export class LevelScene extends Phaser.Scene {
     });
     this.enemies.getChildren().forEach((e) => {
       const en = e as unknown as Enemy;
-      const dx = (en.x - this.player.x) * this.facing;
-      if (en.defeated || dx < -10 || dx > range + en.displayWidth / 2) return;
-      if (Math.abs(en.y - this.player.y) > band + en.displayHeight / 2) return;
+      if (en.defeated) return;
+      const rx = en.x - this.player.x;
+      const ry = en.y - this.player.y;
+      const along = rx * aim.x + ry * aim.y; // distance in the aimed direction
+      const across = Math.abs(rx * aim.y - ry * aim.x); // distance to the side of it
+      // How much of the enemy's size sticks out along / across the line.
+      const halfAlong = (Math.abs(aim.x) * en.displayWidth + Math.abs(aim.y) * en.displayHeight) / 2;
+      const halfAcross = (Math.abs(aim.y) * en.displayWidth + Math.abs(aim.x) * en.displayHeight) / 2;
+      if (along < -10 || along > range + halfAlong) return;
+      if (across > band + halfAcross) return;
       this.zapEnemy(en, now, a.damage ?? 1);
     });
   }
 
-  /** Toad in water: a mega splash that hits and shoves everything around (but not spiky ones). */
+  /** Toad in water: a mega splash that hits and shoves everything around, spiky ones included. */
   private splash(a: Ability, now: number) {
     const radius = a.radius ?? 200;
     Sfx.play('slam');
     this.cameras.main.shake(140, 0.007);
     this.ring(this.player.x, this.player.y, radius, 0x4fc3f7);
+    // A spray of droplets so it reads as a splash, not just a circle.
+    for (let i = 0; i < 10; i++) {
+      const ang = (i / 10) * Math.PI * 2;
+      const d = this.add.text(this.player.x, this.player.y, '💧', { fontSize: '30px' }).setOrigin(0.5).setDepth(41);
+      this.tweens.add({
+        targets: d,
+        x: this.player.x + Math.cos(ang) * radius * 0.9,
+        y: this.player.y + Math.sin(ang) * radius * 0.9,
+        alpha: 0,
+        duration: 450,
+        onComplete: () => d.destroy(),
+      });
+    }
     const dmg = this.form.character!.stompDamage + (a.damage ? a.damage - 1 : 0);
     const kb = a.knockback ?? 0;
     this.enemies.getChildren().forEach((e) => {
       const en = e as unknown as Enemy;
-      if (en.defeated || en.cfg.spiky) return;
+      if (en.defeated) return;
       const dist = Phaser.Math.Distance.Between(en.x, en.y, this.player.x, this.player.y);
       if (dist > radius) return;
       const ang = Math.atan2(en.y - this.player.y, en.x - this.player.x);
-      if (!this.zapEnemy(en, now, dmg) && kb > 0) en.knock(now, 500, Math.cos(ang) * kb, Math.sin(ang) * kb);
+      const sweep = { x: Math.cos(ang) * 180, y: Math.sin(ang) * 180 };
+      if (!this.zapEnemy(en, now, dmg, sweep) && kb > 0) {
+        en.knock(now, 500, Math.cos(ang) * kb, Math.sin(ang) * kb);
+      }
     });
   }
 
@@ -942,6 +1011,12 @@ export class LevelScene extends Phaser.Scene {
     if (this.campMs > 3000 && fighting) {
       this.campMs = 0;
       fighting.requestPound();
+    }
+
+    // Safety net: if the player ever ends up below the level, put them back on the ground.
+    if (!this.water && this.player.y > this.level.height + 60) {
+      body.reset(this.player.x, this.level.height - 140);
+      this.invulnUntil = Math.max(this.invulnUntil, time + 1000);
     }
 
     this.player.setFlipX(!this.form.rolls && this.facing < 0);

@@ -28,7 +28,9 @@ export class UpgradeScene extends Phaser.Scene {
 
   private render() {
     this.tweens.killAll();
-    this.children.removeAll(true);
+    // Destroy, not just detach: a detached object stays registered with the input system, so its
+    // old click handler would keep firing from where it used to be drawn.
+    for (const child of [...this.children.list]) child.destroy();
     this.header();
     if (this.picked) this.renderStats(this.picked);
     else this.renderPick();
